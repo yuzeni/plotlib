@@ -1,0 +1,9 @@
+*.o
+*.a
+*.so
+TODO.txt
+test.cpp
+build_test.sh
+test
+gui_font_binary_ttf.cpp
+bin_to_strliteral
