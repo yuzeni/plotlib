@@ -21,12 +21,6 @@ namespace rl {
 #define MAX_TICK_MARK_COUNT 32
 #define SCROLL_ZOOM_FACTOR 0.5
 
-#define TODO(msg)                               \
-    do {                                        \
-        printf("TODO: %s\n", msg);              \
-        exit(1);                                \
-    } while (0);
-
 #define MAX_DOUBLE 1.7976931348623157e308
 #define MAX_PLOTRANGE_VALUE 1e300
 #define MIN_PLOTRANGE_VALUE 1e-300
