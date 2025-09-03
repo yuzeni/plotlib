@@ -5,6 +5,35 @@ plotlib = "./libplotlib.so"
 const MAX_PLOT_IDX = 1024 - 1
 const MAX_PLOT_GROUP_IDX = 256 - 1
 
+struct Color
+    r::UInt8
+    g::UInt8
+    b::UInt8
+    a::UInt8
+end
+
+const RED           = Color(0xeb, 0x35, 0x45, 0xff)
+const RED_LIGHT     = Color(0xec, 0x73, 0x8e, 0xff)
+const RED_DARK      = Color(0x75, 0x28, 0x28, 0xff)
+const GREEN         = Color(0x6a, 0xbd, 0x3c, 0xff)
+const GREEN_LIGHT   = Color(0x95, 0xde, 0x85, 0xff)
+const GREEN_DARK    = Color(0x4a, 0x6d, 0x22, 0xff)
+const BLUE          = Color(0x5e, 0x6a, 0xea, 0xff)
+const BLUE_LIGHT    = Color(0x9e, 0xbc, 0xde, 0xff)
+const BLUE_DARK     = Color(0x39, 0x34, 0xa4, 0xff)
+const ORANGE        = Color(0xf1, 0xa1, 0x29, 0xff)
+const ORANGE_LIGHT  = Color(0xeb, 0xba, 0x6f, 0xff)
+const ORANGE_DARK   = Color(0xc4, 0x60, 0x00, 0xff)
+const YELLOW        = Color(0xe4, 0xe6, 0x5c, 0xff)
+const YELLOW_LIGHT  = Color(0xfe, 0xff, 0xb2, 0xff)
+const YELLOW_DARK   = Color(0xbf, 0xb6, 0x00, 0xff)
+const PURPLE        = Color(0xb0, 0x4c, 0xe7, 0xff)
+const PURPLE_LIGHT  = Color(0xc0, 0x92, 0xff, 0xff)
+const PURPLE_DARK   = Color(0x69, 0x1c, 0xac, 0xff)
+const WHITE         = Color(0xe9, 0xe9, 0xe9, 0xff)
+const GREY          = Color(0x90, 0x90, 0x90, 0xff)
+const BLACK         = Color(0x0c, 0x0c, 0x0c, 0xff)
+
 function show()::Nothing
     @ccall plotlib.plotlib_show()::Cvoid
 end
@@ -45,12 +74,12 @@ function hide_all_plots()::Nothing
     @ccall plotlib.plot_hide_all()::Cvoid
 end
 
-function plot_clear(plot_idx)::Bool
+function clear_plot(plot_idx)::Bool
     @ccall plotlib.plot_clear(plot_idx::UInt32)::Bool
 end
 
-function set_plot_color(plot_idx, r, g, b, a)::Bool
-    @ccall plotlib.plot_set_color(plot_idx::UInt32, r::UInt8, g::UInt8, b::UInt8, a::UInt8)::Bool
+function set_plot_color(plot_idx, color::Color)::Bool
+    @ccall plotlib.plot_set_color(plot_idx::UInt32, color.r::UInt8, color.g::UInt8, color.b::UInt8, color.a::UInt8)::Bool
 end
 
 function set_plot_name(plot_idx, name::String)::Bool

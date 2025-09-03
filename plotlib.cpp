@@ -15,8 +15,8 @@ namespace rl {
 #include "raylib/raylib.h"
 }
 
-#define DEFAULT_WINDOW_WIDTH 800
-#define DEFAULT_WINDOW_HEIGHT 600
+#define DEFAULT_WINDOW_WIDTH 650
+#define DEFAULT_WINDOW_HEIGHT 500
 #define MAX_TICK_MARK_TEXT_LENGTH 16
 #define MAX_TICK_MARK_COUNT 32
 #define SCROLL_ZOOM_FACTOR 0.5
@@ -90,6 +90,30 @@ struct Color {
     uint8_t r = 255, g = 255, b = 255, a = 255;
 };
 
+static const Color plot_color_table[] = {
+    Color{0xe9, 0xe9, 0xe9, 0xff}, // WHITE
+    Color{0xeb, 0x35, 0x45, 0xff}, // RED
+    Color{0x6a, 0xbd, 0x3c, 0xff}, // GREEN
+    Color{0x5e, 0x6a, 0xea, 0xff}, // BLUE
+    Color{0xf1, 0xa1, 0x29, 0xff}, // ORANGE
+    Color{0xe4, 0xe6, 0x5c, 0xff}, // YELLOW
+    Color{0xb0, 0x4c, 0xe7, 0xff}, // PURPLE
+    Color{0xec, 0x73, 0x8e, 0xff}, // RED_LIGHT
+    Color{0x95, 0xde, 0x85, 0xff}, // GREEN_LIGHT
+    Color{0x9e, 0xbc, 0xde, 0xff}, // BLUE_LIGHT
+    Color{0xeb, 0xba, 0x6f, 0xff}, // ORANGE_LIGHT
+    Color{0xfe, 0xff, 0xb2, 0xff}, // YELLOW_LIGHT
+    Color{0xc0, 0x92, 0xff, 0xff}, // PURPLE_LIGHT
+    Color{0x75, 0x28, 0x28, 0xff}, // RED_DARK
+    Color{0x4a, 0x6d, 0x22, 0xff}, // GREEN_DARK
+    Color{0x39, 0x34, 0xa4, 0xff}, // BLUE_DARK
+    Color{0xc4, 0x60, 0x00, 0xff}, // ORANGE_DARK
+    Color{0xbf, 0xb6, 0x00, 0xff}, // YELLOW_DARK
+    Color{0x69, 0x1c, 0xac, 0xff}, // PURPLE_DARK
+};
+
+static const size_t plot_color_table_size = sizeof(plot_color_table) / sizeof(Color);
+
 static rl::Color color_to_ralib_color(Color color) {
     return rl::Color{ color.r, color.g, color.b, color.a };
 }
@@ -98,7 +122,9 @@ struct Plot {
     std::vector<double> points_x;
     std::vector<double> points_y;
 
-    Color color;
+    Color custom_color;
+    bool use_default_color = true; // determined based in index
+    
     const char* name = nullptr;
     char idx_as_string[16];
 
@@ -112,7 +138,8 @@ struct Plot_Update {
     std::vector<double> new_points_x;
     std::vector<double> new_points_y;
 
-    Color color;
+    Color custom_color;
+    bool use_default_color = true;
     char* name;
 
     bool empty_update = true; // true -> safe to skip the update
@@ -310,7 +337,8 @@ static void apply_and_reset_plot_state_update()
         
         Plot& plot = g_plot_state.plots[plot_idx];
 
-        plot.color = update.color;
+        plot.custom_color = update.custom_color;
+        plot.use_default_color = update.use_default_color;
         plot.name = update.name;
 
         uint64_t old_length = plot.points_y.size();
@@ -674,17 +702,26 @@ void gui_loop()
 
             for (uint64_t i = 0; i < group.plots.size(); ++i)
             {
-                Plot& plot = g_plot_state.plots[group.plots[i]];
+                Plot_IDX plot_idx = group.plots[i];
+                Plot& plot = g_plot_state.plots[plot_idx];
 
                 // Draw plot idx/name
 
+                rl::Color plot_color;
+                if (plot.use_default_color) {
+                    plot_color = color_to_ralib_color(plot_color_table[plot_idx % plot_color_table_size]);
+                }
+                else {
+                    plot_color = color_to_ralib_color(plot.custom_color);
+                }
+
                 char plot_idx_text[16];
-                snprintf(plot_idx_text, 16, "[%d] ", group.plots[i]);
+                snprintf(plot_idx_text, 16, "[%d] ", plot_idx);
                 float plot_idx_text_width = rl::MeasureTextEx(g_gui.font_normal, plot_idx_text, g_gui.fontsize_normal, g_gui.fontspacing).x;
                 rl::DrawTextEx(g_gui.font_normal, plot_idx_text, {plot_screen.x, label_offset_y},
-                               g_gui.fontsize_normal, g_gui.fontspacing, color_to_ralib_color(plot.color));
+                               g_gui.fontsize_normal, g_gui.fontspacing, plot_color);
                 rl::DrawTextEx(g_gui.font_normal, plot.name, {plot_screen.x + plot_idx_text_width, label_offset_y},
-                               g_gui.fontsize_normal, g_gui.fontspacing, color_to_ralib_color(plot.color));
+                               g_gui.fontsize_normal, g_gui.fontspacing, plot_color);
 
                 label_offset_y += g_gui.fontsize_normal;
 
@@ -706,7 +743,7 @@ void gui_loop()
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float x = x_to_screenspace(plot.points_x[i]);
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_prev, y_prev}, {x, y}, color_to_ralib_color(plot.color));
+                            rl::DrawLineV({x_prev, y_prev}, {x, y}, plot_color);
                             x_prev = x;
                             y_prev = y;
                         }
@@ -716,7 +753,7 @@ void gui_loop()
         
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, color_to_ralib_color(plot.color));
+                            rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, plot_color);
                             y_prev = y;
                         }
                     }
@@ -863,7 +900,8 @@ PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, 
     if (!valid_plot_idx(plot_idx)) return false;
     g_plot_state_update_mutex.lock();
 
-    g_plot_state_update.plot_updates[plot_idx].color = Color{r, g, b, a};
+    g_plot_state_update.plot_updates[plot_idx].custom_color = Color{r, g, b, a};
+    g_plot_state_update.plot_updates[plot_idx].use_default_color = false;
     g_plot_state_update.plot_updates[plot_idx].empty_update = false;
 
     g_plot_state_update_mutex.unlock();
