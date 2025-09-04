@@ -7,6 +7,7 @@
 #include <cassert>
 #include <cmath>
 
+#include <limits>
 #include <vector>
 #include <mutex>
 #include <thread>
@@ -15,15 +16,21 @@ namespace rl {
 #include "raylib/raylib.h"
 }
 
+#define DEFAULT_FPS 120
 #define DEFAULT_WINDOW_WIDTH 650
 #define DEFAULT_WINDOW_HEIGHT 500
-#define MAX_TICK_MARK_TEXT_LENGTH 16
+#define MAX_TICK_MARK_TEXT_LENGTH 30
 #define MAX_TICK_MARK_COUNT 32
 #define SCROLL_ZOOM_FACTOR 0.5
+#define EXCESSIVE_TRAILING_ZEROS_THRESHOLD 3 // replace traling zeros for string representations of numbers with '+eX'
+#define DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD 20
+#define MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET 8
+#define DEFAULT_TICK_MARK_LEN 5
 
 #define MAX_DOUBLE 1.7976931348623157e308
 #define MAX_PLOTRANGE_VALUE 1e300
 #define MIN_PLOTRANGE_VALUE 1e-300
+#define PRECISION_SAFTEY_FACTOR 100.0
 
 #define INFO "PLOTLIB INFO: "
 #define WARNING "PLOTLIB WARNING: "
@@ -108,7 +115,7 @@ static const Color plot_color_table[] = {
 
 static const size_t plot_color_table_size = sizeof(plot_color_table) / sizeof(Color);
 
-static rl::Color color_to_ralib_color(Color color) {
+static rl::Color to_rl_color(Color color) {
     return rl::Color{ color.r, color.g, color.b, color.a };
 }
 
@@ -116,12 +123,11 @@ struct Plot {
     std::vector<double> points_x;
     std::vector<double> points_y;
 
-    Color custom_color;
-    bool use_default_color = true; // determined based in index
+    Color color;
+    bool initialized = false;
     
-    const char* name = nullptr;
-    char idx_as_string[16];
-
+    char* label = nullptr;
+    
     Range_XY bb = { MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE }; // bounding box
     
     bool has_x_coordinate() { return !points_x.empty() && points_x.size() == points_y.size(); }
@@ -132,9 +138,10 @@ struct Plot_Update {
     std::vector<double> new_points_x;
     std::vector<double> new_points_y;
 
+
+    bool has_custom_color = false;
     Color custom_color;
-    bool use_default_color = true;
-    char* name;
+    char* new_name = nullptr;
 
     bool empty_update = true; // true -> safe to skip the update
     bool was_cleared = false;
@@ -149,6 +156,11 @@ struct Plot_Update {
     void reset() {
         new_points_x.clear();
         new_points_y.clear();
+        has_custom_color = false;
+        
+        delete new_name;
+        new_name = nullptr;
+        
         was_cleared = false;
         empty_update = true;
     }
@@ -165,13 +177,15 @@ struct Plot_Update {
 
 struct Plot_Group {
     std::vector<Plot_IDX> plots;
-    const char* name = nullptr;
+    char* label = nullptr;
+    bool initialized = false;
 };
 
 struct Plot_Group_Update {
     std::vector<Plot_IDX> new_plots;
     std::vector<Plot_IDX> remove_plots;
-    char* name;
+    
+    char* new_name = nullptr;
     
     bool empty_update = true;
     bool was_cleared = false;
@@ -179,6 +193,10 @@ struct Plot_Group_Update {
     void reset() {
         new_plots.clear();
         remove_plots.clear();
+
+        delete new_name;
+        new_name = nullptr;
+        
         was_cleared = false;
         empty_update = true;
     }
@@ -243,20 +261,30 @@ struct Plot_State_Update {
 };
 
 struct Gui {
+    int target_fps = DEFAULT_FPS;
     rl::Font font_normal;
     rl::Font font_large;
     float fontsize_normal = 22;
-    float fontsize_large = 26;
+    float fontsize_large = 24;
     float fontspacing = 0;
     
     int window_width = DEFAULT_WINDOW_WIDTH;
     int window_height = DEFAULT_WINDOW_HEIGHT;
 
-    int x_pixels_per_tick = 100;
+    int x_pixels_per_tick = 50;
     int y_pixels_per_tick = 50;
-    
-    Color color_backgound_1 = Color{ 0x1f, 0x1f, 0x1f, 0xff};
-    Color color_backgound_2 = Color{ 0x2f, 0x2f, 0x2f, 0xff};
+
+    Color color_backgound_2 = Color{ 0x25, 0x25, 0x25, 0xff };
+    Color color_backgound_1 = Color{ 0xff, 0xff, 0xff, 0x10 };
+    Color color_plot_screen_border = Color{ 0xff, 0xff, 0xff };
+    Color color_coordinate_axes = Color{ 0xff, 0xff, 0xff, 0x40 };
+    float plot_screen_border_width = 1;
+    int tick_mark_len = DEFAULT_TICK_MARK_LEN;
+
+    float offset_normal = 5;
+    float offset_small = 2;
+
+    float zoom_to_zero_pixel_distance_threshold = DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD;
 };
 
 static Gui g_gui;
@@ -328,12 +356,31 @@ static void apply_and_reset_plot_state_update()
     {
         Plot_Update& update = g_plot_state_update.plot_updates[plot_idx];
         if (update.empty_update) continue;
-        
+
         Plot& plot = g_plot_state.plots[plot_idx];
 
-        plot.custom_color = update.custom_color;
-        plot.use_default_color = update.use_default_color;
-        plot.name = update.name;
+        if (!plot.initialized) {
+            int label_len = 12; // should be enough for "[plot_idx]"
+            plot.label = new char[label_len];
+            snprintf(plot.label, label_len, "[%d]", plot_idx);
+            plot.label[label_len - 1] = '\0';
+            
+            plot.color = plot_color_table[plot_idx % plot_color_table_size];
+            
+            plot.initialized = true;
+        }
+
+        if (update.has_custom_color) {
+            plot.color = update.custom_color;
+        }
+
+        if (update.new_name) {
+            int label_len = 12 + strlen(update.new_name) + 1;
+            delete plot.label;
+            plot.label = new char[label_len];
+            snprintf(plot.label, label_len, "[%d] %s", plot_idx, update.new_name);
+            plot.label[label_len - 1] = '\0';
+        }
 
         uint64_t old_length = plot.points_y.size();
         uint64_t new_length = old_length;
@@ -384,7 +431,22 @@ static void apply_and_reset_plot_state_update()
         
         Plot_Group& group = g_plot_state.plot_groups[group_idx];
 
-        group.name = update.name;
+        if (!group.initialized) {
+            int label_len = 24; // should be enough for "[group_idx]"
+            group.label = new char[label_len];
+            snprintf(group.label, label_len, "[%d] Plot Group", group_idx);
+            group.label[label_len - 1] = '\0';
+            
+            group.initialized = true;
+        }
+
+        if (update.new_name) {
+            int label_len = 12 + strlen(update.new_name) + 1;
+            delete group.label;
+            group.label = new char[label_len];
+            snprintf(group.label, label_len, "[%d] %s", group_idx, update.new_name);
+            group.label[label_len - 1] = '\0';
+        }
 
         if (update.was_cleared) {
             group.plots.clear();
@@ -448,15 +510,116 @@ static void gui_update_plot_range_interactive_mode(Range_XY& plot_range, rl::Rec
         zoom_factor_y = 1.0;
     }
 
+    auto x_to_screenspace = [=](double x) -> float {
+        return linear_map(x, plot_range.x_begin, plot_range.x_end, (double) plot_screen.x, (double) plot_screen.x + plot_screen.width);
+    };
+
+    auto y_to_screenspace = [=](double y) -> float {
+        return linear_map(y, plot_range.y_begin, plot_range.y_end, (double) plot_screen.y + plot_screen.height, (double) plot_screen.y);
+    };
+
     rl::Vector2 mouse_pos = rl::GetMousePosition();
     double zoom_center_x = x_to_plotspace(mouse_pos.x);
     double zoom_center_y = y_to_plotspace(mouse_pos.y);
+
+    // prefer zooming to the origin / to the x=0, y=0 coordinate axes
+    if (std::abs(x_to_screenspace(0) - mouse_pos.x) < g_gui.zoom_to_zero_pixel_distance_threshold) {
+        zoom_center_x = 0;
+    }
+
+    if (std::abs(y_to_screenspace(0) - mouse_pos.y) < g_gui.zoom_to_zero_pixel_distance_threshold) {
+        zoom_center_y = 0;
+    }
 
     // xy = zoom_matrix * (xy - mouse_pos) + mouse_pos + mouse_pan
     plot_range.x_begin = zoom_factor_x * (plot_range.x_begin - zoom_center_x) + zoom_center_x + plot_space_pan_x;
     plot_range.x_end = zoom_factor_x * (plot_range.x_end - zoom_center_x) + zoom_center_x + plot_space_pan_x;
     plot_range.y_begin = zoom_factor_y * (plot_range.y_begin - zoom_center_y) + zoom_center_y + plot_space_pan_y;
     plot_range.y_end = zoom_factor_y * (plot_range.y_end - zoom_center_y) + zoom_center_y + plot_space_pan_y;
+}
+
+struct Ticks {
+    int x_count = 0;
+    int y_count = 0;
+
+    double x_spacing;
+    double x_begin;
+    double y_spacing;
+    double y_begin;
+
+    char x_text[MAX_TICK_MARK_COUNT][MAX_TICK_MARK_TEXT_LENGTH];
+    char y_text[MAX_TICK_MARK_COUNT][MAX_TICK_MARK_TEXT_LENGTH];
+    float x_text_width[MAX_TICK_MARK_COUNT];
+    float x_text_width_max = 0;
+    float y_text_width[MAX_TICK_MARK_COUNT];
+    float y_text_width_max = 0;
+};
+
+static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot_range, int x_pixels_per_tick = g_gui.x_pixels_per_tick)
+{
+    auto calculate_tick_spacing = [](double begin, double end, int tick_count) -> double {
+        double raw_step = (end - begin) / tick_count;
+        double exponent = std::floor(std::log10(raw_step));
+        double base = std::pow(10, exponent);
+        double fraction = raw_step / base;
+        const double nice_fractions[] = {1, 2, 2.5, 5, 10};
+        double best_fraction = 1;
+        for (size_t i = 0; i < sizeof(nice_fractions) / sizeof(double); ++i) {
+            if (fraction <= nice_fractions[i]) {
+                best_fraction = nice_fractions[i];
+                break;
+            }
+        }
+        return best_fraction * base;
+    };
+
+    auto remove_excessive_trailing_zeros = [](char* number_str, int max_len){
+        int true_len = strnlen(number_str, max_len);
+        if (true_len <= 0) return;
+
+        int trailing_zeros_cnt = 0;
+        int str_idx = true_len;
+        while (str_idx > 0 && number_str[--str_idx] == '0') ++trailing_zeros_cnt;
+
+        if (trailing_zeros_cnt >= EXCESSIVE_TRAILING_ZEROS_THRESHOLD) {
+            snprintf(&number_str[str_idx + 1], max_len - str_idx, "+e%d", trailing_zeros_cnt);
+        }
+    };
+
+    ticks.x_count = std::min((int) std::floor(bounds.width / x_pixels_per_tick), MAX_TICK_MARK_COUNT);
+    ticks.y_count = std::min((int) std::floor(bounds.height / g_gui.y_pixels_per_tick), MAX_TICK_MARK_COUNT);
+
+    ticks.x_spacing = calculate_tick_spacing(plot_range.x_begin, plot_range.x_end, ticks.x_count);
+    ticks.x_begin = ceil(plot_range.x_begin / ticks.x_spacing) * ticks.x_spacing;
+    ticks.y_spacing = calculate_tick_spacing(plot_range.y_begin, plot_range.y_end, ticks.y_count);
+    ticks.y_begin = ceil(plot_range.y_begin / ticks.y_spacing) * ticks.y_spacing;
+
+    int tick_idx = 0;
+    for (double x = ticks.x_begin; x < plot_range.x_end && tick_idx < MAX_TICK_MARK_COUNT; x += ticks.x_spacing, ++tick_idx) {
+        // this is a stupid hack to make sure 0 is dispayed cleanly, it works because 0 is always included as a tick,
+        // if 0 is in the plot_range. So we can find it easily by comparing x to the tick-spacing
+        if (std::abs(x) < ticks.x_spacing * 1e-3) x = 0.0;
+        
+        snprintf(ticks.x_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%.14g", x);
+        remove_excessive_trailing_zeros(ticks.x_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH);
+        ticks.x_text_width[tick_idx] = MeasureTextEx(g_gui.font_normal, ticks.x_text[tick_idx], g_gui.fontsize_normal, g_gui.fontspacing).x;
+        ticks.x_text_width_max = ticks.x_text_width[tick_idx] > ticks.x_text_width_max ? ticks.x_text_width[tick_idx] : ticks.x_text_width_max;
+    }
+
+    // Regenerate the ticks if the text is too wide.
+    if (ticks.x_text_width_max > x_pixels_per_tick && x_pixels_per_tick < 1000) {
+        gui_generate_ticks(ticks, bounds, plot_range, x_pixels_per_tick * 2);
+        return;
+    }
+
+    tick_idx = 0;
+    for (double y = ticks.y_begin; y < plot_range.y_end && tick_idx < MAX_TICK_MARK_COUNT; y += ticks.y_spacing, ++tick_idx) {
+        if (std::abs(y) < ticks.y_spacing * 1e-3) y = 0.0;
+        snprintf(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%.14g", y);
+        remove_excessive_trailing_zeros(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH);
+        ticks.y_text_width[tick_idx] = MeasureTextEx(g_gui.font_normal, ticks.y_text[tick_idx], g_gui.fontsize_normal, g_gui.fontspacing).x;
+        ticks.y_text_width_max = ticks.y_text_width[tick_idx] > ticks.y_text_width_max ? ticks.y_text_width[tick_idx] : ticks.y_text_width_max;
+    }
 }
 
 void gui_loop()
@@ -474,7 +637,7 @@ void gui_loop()
             rl::SetConfigFlags(rl::FLAG_WINDOW_RESIZABLE);
             rl::SetTraceLogLevel(rl::LOG_ERROR);
             rl::InitWindow(g_gui.window_width, g_gui.window_height, "Plotlib Window");
-            rl::SetTargetFPS(60);
+            rl::SetTargetFPS(g_gui.target_fps);
             g_gui.font_normal = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, g_gui.fontsize_normal, nullptr, 0);
             g_gui.font_large = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, g_gui.fontsize_large, nullptr, 0);
             window_is_init = true;
@@ -509,6 +672,10 @@ void gui_loop()
         rl::BeginDrawing();
         {
             Plot_Group& group = g_plot_state.plot_groups[g_plot_state.visible_group];
+
+            // Draw Background
+
+            rl::DrawRectangleRec(bounds, to_rl_color(g_gui.color_backgound_2));
 
             // Determine the plot range (The xy-range in plotspace that should be displayed)
 
@@ -570,7 +737,7 @@ void gui_loop()
             was_clamped |= clamp_plot_range(plot_range.x_end);
             was_clamped |= clamp_plot_range(plot_range.y_begin);
             was_clamped |= clamp_plot_range(plot_range.y_end);
-            
+
             if (was_clamped) {
                 printf(WARNING "Coordinates of the plot-space were clamped to the range [%g, %g]\n", MIN_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE);
             }
@@ -593,54 +760,69 @@ void gui_loop()
                 plot_range.y_end = 0.5;
             }
 
-            // Calculate the tick spacing and generate the tick labels
-
-            int ticks_x_count = std::min((int) std::floor(bounds.width / g_gui.x_pixels_per_tick), MAX_TICK_MARK_COUNT);
-            int ticks_y_count = std::min((int) std::floor(bounds.height / g_gui.y_pixels_per_tick), MAX_TICK_MARK_COUNT);
-    
-            auto calculate_tick_spacing = [](double begin, double end, int tick_count) -> double {
-                double raw_step = (end - begin) / tick_count;
-                double exponent = floor(log10(raw_step));
-                double base = pow(10, exponent);
-                double fraction = raw_step / base;
-                double nice_fractions[] = {1, 2, 2.5, 5, 10};
-                double best_fraction = 1;
-                for (size_t i = 0; i < sizeof(nice_fractions) / sizeof(double); ++i) {
-                    if (fraction <= nice_fractions[i]) {
-                        best_fraction = nice_fractions[i];
-                        break;
-                    }
-                }
-                return best_fraction * base;
+            auto limit_range_to_tolerable_precision = [](double& range_begin, double& range_end) -> void {
+                double nextafter_begin = std::nextafter(range_begin, std::numeric_limits<double>::infinity());
+                assert(range_end - range_begin  >= 0);
+                assert(nextafter_begin - range_begin >= 0);
+                double precision_correction = (range_end - range_begin) - (nextafter_begin - range_begin) * PRECISION_SAFTEY_FACTOR;
+                if (precision_correction < 0) {
+                    range_begin -= std::abs(precision_correction) / 2.0;
+                    range_end   += std::abs(precision_correction) / 2.0;
+                }  
             };
 
-            double ticks_x_spacing = calculate_tick_spacing(plot_range.x_begin, plot_range.x_end, ticks_x_count);
-            double ticks_x_begin = ceil(plot_range.x_begin / ticks_x_spacing) * ticks_x_spacing;
-            double ticks_y_spacing = calculate_tick_spacing(plot_range.y_begin, plot_range.y_end, ticks_y_count);
-            double ticks_y_begin = ceil(plot_range.y_begin / ticks_y_spacing) * ticks_y_spacing;
+            limit_range_to_tolerable_precision(plot_range.x_begin, plot_range.x_end);
+            limit_range_to_tolerable_precision(plot_range.y_begin, plot_range.y_end);
 
-            char ticks_x_text[MAX_TICK_MARK_COUNT][MAX_TICK_MARK_TEXT_LENGTH];
-            char ticks_y_text[MAX_TICK_MARK_COUNT][MAX_TICK_MARK_TEXT_LENGTH];
-            float ticks_max_y_text_width = 0;
+            // Calculate the tick spacing and generate the tick labels
 
-            int tick_idx = 0;
-            for (double x = ticks_x_begin; x < plot_range.x_end && tick_idx < MAX_TICK_MARK_COUNT; x += ticks_x_spacing, ++tick_idx) {
-                snprintf(ticks_x_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%g", std::abs(x) > 1e-9 ? x : 0.0);
+            Ticks ticks;
+            gui_generate_ticks(ticks, bounds, plot_range);
+
+            // Draw plot legend
+
+            float legend_content_width = 0;
+            if (g_plot_state.visible_group != DEFAULT_PLOT_GROUP_IDX) {
+                legend_content_width = rl::MeasureTextEx(g_gui.font_large, group.label, g_gui.fontsize_large, g_gui.fontspacing).x;
+            }
+            for (uint64_t i = 0; i < group.plots.size(); ++i) {
+                Plot& plot = g_plot_state.plots[group.plots[i]];
+                float label_text_width = rl::MeasureTextEx(g_gui.font_normal, plot.label, g_gui.fontsize_normal, g_gui.fontspacing).x;
+                legend_content_width = label_text_width > legend_content_width ? label_text_width : legend_content_width;
             }
 
-            tick_idx = 0;
-            for (double y = ticks_y_begin; y < plot_range.y_end && tick_idx < MAX_TICK_MARK_COUNT; y += ticks_y_spacing, ++tick_idx) {
-                snprintf(ticks_y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%g", std::abs(y) > 1e-9 ? y : 0.0);
-                float tick_str_width = MeasureTextEx(g_gui.font_normal, ticks_y_text[tick_idx], g_gui.fontsize_normal, g_gui.fontspacing).x;
-                ticks_max_y_text_width = tick_str_width > ticks_max_y_text_width ? tick_str_width : ticks_max_y_text_width;
+            float legend_x = bounds.x + bounds.width - (legend_content_width + g_gui.offset_normal);
+            float legend_y = g_gui.offset_normal;
+            float legend_width = legend_content_width + 2 * g_gui.offset_normal;
+
+            if (g_plot_state.visible_group != DEFAULT_PLOT_GROUP_IDX) {
+                rl::DrawTextEx(g_gui.font_large, group.label, {legend_x, legend_y}, g_gui.fontsize_large, g_gui.fontspacing, rl::WHITE);
+                legend_y += g_gui.fontsize_large + g_gui.offset_small;
+                
+                rl::DrawLineV({legend_x, legend_y}, {legend_x + legend_content_width, legend_y}, rl::WHITE);
+                legend_y += g_gui.offset_small;
+            }
+
+            for (uint64_t i = 0; i < group.plots.size(); ++i) {
+                Plot& plot = g_plot_state.plots[group.plots[i]];
+                rl::DrawTextEx(g_gui.font_normal, plot.label, {legend_x, legend_y}, g_gui.fontsize_normal, g_gui.fontspacing, to_rl_color(plot.color));
+                legend_y += g_gui.fontsize_normal;
             }
 
             // Determine the size of the plot-screen (the part of the window where the plots should be drawn into)
 
-            plot_screen = { bounds.x + ticks_max_y_text_width + 5,
-                            bounds.y,
-                            bounds.width - (ticks_max_y_text_width + 5),
-                            bounds.height - (g_gui.fontsize_normal + 5) };
+            float left_plot_screen_offset = ticks.y_text_width_max + 2 * g_gui.offset_normal;
+            float right_plot_screen_offset = std::max((float) MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET, legend_width);
+            float top_plot_screen_offset = MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET;
+            float bottom_plot_screen_offset = g_gui.fontsize_normal + g_gui.offset_normal;
+
+            plot_screen = { bounds.x + left_plot_screen_offset,
+                            bounds.y + top_plot_screen_offset,
+                            bounds.width - (left_plot_screen_offset + right_plot_screen_offset),
+                            bounds.height - (top_plot_screen_offset + bottom_plot_screen_offset) };
+
+            if (plot_screen.width < 1) plot_screen.width = 1;
+            if (plot_screen.height < 1) plot_screen.height = 1;
 
             auto x_to_screenspace = [=](double x) -> float {
                 return linear_map(x, plot_range.x_begin, plot_range.x_end, (double) plot_screen.x, (double) plot_screen.x + plot_screen.width);
@@ -650,76 +832,39 @@ void gui_loop()
                 return linear_map(y, plot_range.y_begin, plot_range.y_end, (double) plot_screen.y + plot_screen.height, (double) plot_screen.y);
             };
 
-            // Draw the plot Panel (Background and ticks)
-            
-            rl::DrawRectangle(bounds.x, bounds.y, bounds.width, bounds.height, color_to_ralib_color(g_gui.color_backgound_1));
-            rl::DrawRectangle(plot_screen.x, plot_screen.y, plot_screen.width, plot_screen.height, color_to_ralib_color(g_gui.color_backgound_2));
+            // Draw plot_screen border and ticks (tick-lines and tick-labels)
 
-            tick_idx = 0;
-            for (double x = ticks_x_begin; x < plot_range.x_end; x += ticks_x_spacing, ++tick_idx) {
+            float bw = g_gui.plot_screen_border_width;
+            rl::DrawRectangleLinesEx({plot_screen.x - bw, plot_screen.y - bw, plot_screen.width + 2*bw, plot_screen.height + 2*bw},
+                                     bw, to_rl_color(g_gui.color_plot_screen_border));
+            
+            int tick_idx = 0;
+            for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
                 float x_screenspace = x_to_screenspace(x);
-                DrawLine(x_screenspace, plot_screen.y, x_screenspace, plot_screen.y + plot_screen.height, color_to_ralib_color(g_gui.color_backgound_1));
-                DrawTextEx(g_gui.font_normal, ticks_x_text[tick_idx], {x_screenspace, plot_screen.y + plot_screen.height},
+                rl::DrawLine(x_screenspace, plot_screen.y, x_screenspace, plot_screen.y + plot_screen.height, to_rl_color(g_gui.color_backgound_1));
+                rl::DrawTextEx(g_gui.font_normal, ticks.x_text[tick_idx], {x_screenspace, plot_screen.y + plot_screen.height},
                            g_gui.fontsize_normal, g_gui.fontspacing, rl::WHITE);
             }
-    
-            tick_idx = 0;
-            for (double y = ticks_y_begin; y < plot_range.y_end; y += ticks_y_spacing, ++tick_idx) {
-                float y_screenspace = y_to_screenspace(y);
-                DrawLine(plot_screen.x, y_screenspace, plot_screen.x + plot_screen.width, y_screenspace, color_to_ralib_color(g_gui.color_backgound_1));
-                DrawTextEx(g_gui.font_normal, ticks_y_text[tick_idx], {bounds.x, y_screenspace - g_gui.fontsize_normal},
-                           g_gui.fontsize_normal, g_gui.fontspacing, rl::WHITE);
-            }
-
-            // Draw group idx/name
-
-            float label_offset_y = plot_screen.y;
-
-            if (g_plot_state.visible_group != DEFAULT_PLOT_GROUP_IDX) {
-                char group_idx_text[16];
-                snprintf(group_idx_text, 16, "[%d] ", g_plot_state.visible_group);
-                float group_idx_text_width = rl::MeasureTextEx(g_gui.font_large, group_idx_text, g_gui.fontsize_large, g_gui.fontspacing).x;
-                rl::DrawTextEx(g_gui.font_large, group_idx_text, {plot_screen.x, plot_screen.y}, g_gui.fontsize_large, g_gui.fontspacing, rl::WHITE);
-                if (group.name) {
-                    rl::DrawTextEx(g_gui.font_large, group.name, {plot_screen.x + group_idx_text_width, label_offset_y},
-                                   g_gui.fontsize_large, g_gui.fontspacing, rl::WHITE);
-                }
-                else {
-                    rl::DrawTextEx(g_gui.font_large, "Plot Group", {plot_screen.x + group_idx_text_width, label_offset_y},
-                                   g_gui.fontsize_large, g_gui.fontspacing, rl::WHITE);
-                }
             
-                label_offset_y += g_gui.fontsize_large;
+            tick_idx = 0;
+            for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
+                float y_screenspace = y_to_screenspace(y);
+                rl::DrawLine(plot_screen.x, y_screenspace, plot_screen.x + plot_screen.width, y_screenspace, to_rl_color(g_gui.color_backgound_1));
+                rl::DrawTextEx(g_gui.font_normal, ticks.y_text[tick_idx], {bounds.x + g_gui.offset_normal, y_screenspace - g_gui.fontsize_normal},
+                           g_gui.fontsize_normal, g_gui.fontspacing, rl::WHITE);
             }
- 
-            // Draw the plots and their idx/name
+
+            // Draw x=0, y=0 coordinate-axes
+            
+            rl::DrawLineV({plot_screen.x, y_to_screenspace(0)}, {plot_screen.x + plot_screen.width, y_to_screenspace(0)}, to_rl_color(g_gui.color_coordinate_axes));
+            rl::DrawLineV({x_to_screenspace(0), plot_screen.y}, {x_to_screenspace(0), plot_screen.y + plot_screen.height}, to_rl_color(g_gui.color_coordinate_axes));
+            
+            // Draw the plots
 
             for (uint64_t i = 0; i < group.plots.size(); ++i)
             {
                 Plot_IDX plot_idx = group.plots[i];
                 Plot& plot = g_plot_state.plots[plot_idx];
-
-                // Draw plot idx/name
-
-                rl::Color plot_color;
-                if (plot.use_default_color) {
-                    plot_color = color_to_ralib_color(plot_color_table[plot_idx % plot_color_table_size]);
-                }
-                else {
-                    plot_color = color_to_ralib_color(plot.custom_color);
-                }
-
-                char plot_idx_text[16];
-                snprintf(plot_idx_text, 16, "[%d] ", plot_idx);
-                float plot_idx_text_width = rl::MeasureTextEx(g_gui.font_normal, plot_idx_text, g_gui.fontsize_normal, g_gui.fontspacing).x;
-                rl::DrawTextEx(g_gui.font_normal, plot_idx_text, {plot_screen.x, label_offset_y},
-                               g_gui.fontsize_normal, g_gui.fontspacing, plot_color);
-                rl::DrawTextEx(g_gui.font_normal, plot.name, {plot_screen.x + plot_idx_text_width, label_offset_y},
-                               g_gui.fontsize_normal, g_gui.fontspacing, plot_color);
-
-                label_offset_y += g_gui.fontsize_normal;
-
-                // Draw each plot
                     
                 if (plot.empty()) continue;
                 
@@ -737,7 +882,7 @@ void gui_loop()
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float x = x_to_screenspace(plot.points_x[i]);
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_prev, y_prev}, {x, y}, plot_color);
+                            rl::DrawLineV({x_prev, y_prev}, {x, y}, to_rl_color(plot.color));
                             x_prev = x;
                             y_prev = y;
                         }
@@ -747,12 +892,28 @@ void gui_loop()
         
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, plot_color);
+                            rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, to_rl_color(plot.color));
                             y_prev = y;
                         }
                     }
                 }
                 rl::EndScissorMode();
+            }
+
+            // Draw ticks marks (they have to be drawn over the plots)
+
+            tick_idx = 0;
+            for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
+                float x_screenspace = x_to_screenspace(x);
+                rl::DrawLineEx({x_screenspace, plot_screen.y + plot_screen.height - g_gui.tick_mark_len}, {x_screenspace, plot_screen.y + plot_screen.height},
+                               g_gui.plot_screen_border_width, to_rl_color(g_gui.color_plot_screen_border));
+            }
+            
+            tick_idx = 0;
+            for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
+                float y_screenspace = y_to_screenspace(y);
+                rl::DrawLineEx({plot_screen.x, y_screenspace}, {plot_screen.x + g_gui.tick_mark_len, y_screenspace},
+                               g_gui.plot_screen_border_width, to_rl_color(g_gui.color_plot_screen_border));
             }
         }
         rl::EndDrawing();
@@ -895,7 +1056,7 @@ PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, 
     g_plot_state_update_mutex.lock();
 
     g_plot_state_update.plot_updates[plot_idx].custom_color = Color{r, g, b, a};
-    g_plot_state_update.plot_updates[plot_idx].use_default_color = false;
+    g_plot_state_update.plot_updates[plot_idx].has_custom_color = true;
     g_plot_state_update.plot_updates[plot_idx].empty_update = false;
 
     g_plot_state_update_mutex.unlock();
@@ -909,9 +1070,8 @@ PLOTAPI bool plot_set_name(uint32_t plot_idx, const char* name)
     
     Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
     
-    delete plot_update.name;
-    plot_update.name = new char[strlen(name) + 1];
-    strcpy(plot_update.name, name);
+    plot_update.new_name = new char[strlen(name) + 1];
+    strcpy(plot_update.new_name, name);
     plot_update.empty_update = false;
 
     g_plot_state_update_mutex.unlock();
@@ -1160,9 +1320,8 @@ PLOTAPI bool plotgroup_set_name(uint32_t plotgroup_idx, const char* name)
 
     Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[plotgroup_idx];
 
-    delete group_update.name;
-    group_update.name = new char[strlen(name) + 1];
-    strcpy(group_update.name, name);
+    group_update.new_name = new char[strlen(name) + 1];
+    strcpy(group_update.new_name, name);
     group_update.empty_update = false;
             
     g_plot_state_update_mutex.unlock();
