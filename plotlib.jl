@@ -39,32 +39,44 @@ function show()::Nothing
     @ccall plotlib.plotlib_show()::Cvoid
 end
 
+function hide()::Nothing
+    @ccall plotlib.plotlib_hide()::Cvoid
+end
+
+function dark_theme()::Nothing
+    @ccall plotlib.plotlib_dark_theme()::Cvoid
+end
+
+function light_theme()::Nothing
+    @ccall plotlib.plotlib_light_theme()::Cvoid
+end
+
 """
 Enables zooming and paning in the GUI.
 Use Left-CTRL + Mouse-Wheel for vertical zooming
 Use Left-Schift + Mouse-Wheel for horizontal zooming
 """
-function mode_interactive()::Nothing
+function interactive()::Nothing
     @ccall plotlib.plotlib_mode_interactive()::Cvoid;
 end
 
 "Shows the last n points/numbers of the plot."
-function mode_show_n_points_of_tail(points_count)::Nothing
+function show_n_points_of_tail(points_count)::Nothing
     @ccall plotlib.plotlib_mode_show_n_points_of_tail(points_count::UInt64)::Cvoid;
 end
 
 "Constrains the length of the x-axis to 'x_range' and shows the right-most part of the plot."
-function mode_show_x_range_of_tail(x_range)::Nothing
+function show_x_range_of_tail(x_range)::Nothing
     @ccall plotlib.plotlib_mode_show_x_range_of_tail(x_range::Float64)::Cvoid;
 end
 
 "Fills the window with all plots which are currently displayed."
-function mode_fill_window()::Nothing
+function fill_window()::Nothing
     @ccall plotlib.plotlib_mode_fill_window()::Cvoid;
 end
 
 "Fills the window with a specific plot, it doesn't need to be visible."
-function mode_show_specific_plot(plot_idx)::Bool
+function enlarge_specific_plot(plot_idx)::Bool
     @ccall plotlib.plotlib_mode_show_specific_plot(plot_idx::UInt32)::Bool
 end
 
@@ -76,6 +88,9 @@ end
 function show_plot(plot_idx)::Bool
     @ccall plotlib.plot_show(plot_idx::UInt32)::Bool
 end
+
+"'Alias for show_plot(plot_idx)'."
+show(plot_idx) = show_plot(plot_idx)
 
 function hide_plot(plot_idx)::Bool
     @ccall plotlib.plot_hide(plot_idx::UInt32)::Bool

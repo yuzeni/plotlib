@@ -16,16 +16,18 @@ namespace rl {
 #include "raylib/raylib.h"
 }
 
+// User-changeable constants
+
 #define DEFAULT_FPS 120
 #define DEFAULT_WINDOW_WIDTH 650
 #define DEFAULT_WINDOW_HEIGHT 500
-#define MAX_TICK_MARK_TEXT_LENGTH 30
-#define MAX_TICK_MARK_COUNT 32
 #define SCROLL_ZOOM_FACTOR 0.5
 #define EXCESSIVE_TRAILING_ZEROS_THRESHOLD 3 // replace traling zeros for string representations of numbers with '+eX'
-#define DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD 20
+#define DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD 20 // Zoom to zero instead to the curso position if the cursor is close to zero
 #define MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET 8
-#define DEFAULT_TICK_MARK_LEN 5
+#define DEFAULT_TICK_MARK_LEN 5 // The length of the little marks at the tick-positions
+
+// Implementation constants
 
 #define MAX_DOUBLE 1.7976931348623157e308
 #define MAX_PLOTRANGE_VALUE 1e300
@@ -41,6 +43,9 @@ namespace rl {
 #define MAX_PLOT_SIZE (PLOTLIB_MAX_PLOT_IDX + 1)
 #define MAX_PLOT_GROUP_SIZE (PLOTLIB_MAX_PLOT_GROUP_IDX + 2)
 #define DEFAULT_PLOT_GROUP_IDX (PLOTLIB_MAX_PLOT_GROUP_IDX + 1)
+
+#define MAX_TICK_MARK_TEXT_LENGTH 30
+#define MAX_TICK_MARK_COUNT 32
 
 extern const unsigned char gui_font_binary_ttf[];
 extern const unsigned int gui_font_binary_ttf_len;
@@ -92,25 +97,24 @@ struct Color {
 };
 
 static const Color plot_color_table[] = {
-    Color{0xe9, 0xe9, 0xe9, 0xff}, // WHITE
-    Color{0xeb, 0x35, 0x45, 0xff}, // RED
-    Color{0x6a, 0xbd, 0x3c, 0xff}, // GREEN
     Color{0x5e, 0x6a, 0xea, 0xff}, // BLUE
+    Color{0x6a, 0xbd, 0x3c, 0xff}, // GREEN
+    Color{0xeb, 0x35, 0x45, 0xff}, // RED
+    Color{0xb0, 0x4c, 0xe7, 0xff}, // PURPLE
     Color{0xf1, 0xa1, 0x29, 0xff}, // ORANGE
     Color{0xe4, 0xe6, 0x5c, 0xff}, // YELLOW
-    Color{0xb0, 0x4c, 0xe7, 0xff}, // PURPLE
-    Color{0xec, 0x73, 0x8e, 0xff}, // RED_LIGHT
-    Color{0x95, 0xde, 0x85, 0xff}, // GREEN_LIGHT
     Color{0x9e, 0xbc, 0xde, 0xff}, // BLUE_LIGHT
+    Color{0x95, 0xde, 0x85, 0xff}, // GREEN_LIGHT
+    Color{0xec, 0x73, 0x8e, 0xff}, // RED_LIGHT
+    Color{0xc0, 0x92, 0xff, 0xff}, // PURPLE_LIGHT
     Color{0xeb, 0xba, 0x6f, 0xff}, // ORANGE_LIGHT
     Color{0xfe, 0xff, 0xb2, 0xff}, // YELLOW_LIGHT
-    Color{0xc0, 0x92, 0xff, 0xff}, // PURPLE_LIGHT
-    Color{0x75, 0x28, 0x28, 0xff}, // RED_DARK
-    Color{0x4a, 0x6d, 0x22, 0xff}, // GREEN_DARK
     Color{0x39, 0x34, 0xa4, 0xff}, // BLUE_DARK
+    Color{0x4a, 0x6d, 0x22, 0xff}, // GREEN_DARK
+    Color{0x75, 0x28, 0x28, 0xff}, // RED_DARK
+    Color{0x69, 0x1c, 0xac, 0xff}, // PURPLE_DARK
     Color{0xc4, 0x60, 0x00, 0xff}, // ORANGE_DARK
     Color{0xbf, 0xb6, 0x00, 0xff}, // YELLOW_DARK
-    Color{0x69, 0x1c, 0xac, 0xff}, // PURPLE_DARK
 };
 
 static const size_t plot_color_table_size = sizeof(plot_color_table) / sizeof(Color);
@@ -209,6 +213,57 @@ struct Plot_Group_Update {
     }
 };
 
+struct Theme_Colors {
+    rl::Color text;
+    rl::Color backgound;
+    rl::Color tick_lines;
+    rl::Color coordinate_axes;
+    rl::Color plot_screen_border;
+};
+
+static const Theme_Colors dark_theme_colors = {
+    .text               = { 0xff, 0xff, 0xff, 0xff},
+    .backgound          = { 0x25, 0x25, 0x25, 0xff },
+    .tick_lines         = { 0xff, 0xff, 0xff, 0x10 },
+    .coordinate_axes    = { 0xff, 0xff, 0xff, 0x40 },
+    .plot_screen_border = { 0xff, 0xff, 0xff, 0xff },
+};
+
+static const Theme_Colors light_theme_colors = {
+    .text               = { 0x00, 0x00, 0x00, 0xff},
+    .backgound          = { 0xfd, 0xfd, 0xfd, 0xff },
+    .tick_lines         = { 0x00, 0x00, 0x00, 0x10 },
+    .coordinate_axes    = { 0x00, 0x00, 0x00, 0x40 },
+    .plot_screen_border = { 0x00, 0x00, 0x00, 0xff },
+};
+
+struct Gui {
+    int target_fps = DEFAULT_FPS;
+    
+    rl::Font font_normal;
+    rl::Font font_large;
+    float fontsize_normal = 22;
+    float fontsize_large = 24;
+    float fontspacing = 0;
+
+    int window_width = DEFAULT_WINDOW_WIDTH;
+    int window_height = DEFAULT_WINDOW_HEIGHT;
+
+    int x_pixels_per_tick = 50;
+    int y_pixels_per_tick = 50;
+
+    int tick_mark_len = DEFAULT_TICK_MARK_LEN;
+    float plot_screen_border_width = 1;
+
+    float offset_normal = 5;
+    float offset_small = 2;
+
+    float zoom_to_zero_pixel_distance_threshold = DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD;
+    int zoom_resize_cooldown = 0;
+
+    Theme_Colors colors;
+};
+
 struct Visualization_Mode {
     enum : uint32_t {
         NONE,
@@ -224,24 +279,30 @@ struct Visualization_Mode {
     Plot_IDX specific_plot = INVALID_IDX;
 };
 
-struct Plot_State {
+struct Plotlib_State {
     Plot plots[MAX_PLOT_SIZE];
     Plot_Group plot_groups[MAX_PLOT_GROUP_SIZE];
-    
+
     Group_IDX visible_group = DEFAULT_PLOT_GROUP_IDX;
     Visualization_Mode vis_mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+    
     Range_XY plot_range = Range_XY{};
     rl::Rectangle plot_screen = rl::Rectangle{ 0, 0, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT };
 
+    Gui gui;
+    bool window_is_init = false;
     bool window_visible = false;
+    bool terminate = false;
 };
 
-struct Plot_State_Update {
+struct Plotlib_State_Update {
     Plot_Update plot_updates[MAX_PLOT_SIZE];
     Plot_Group_Update plot_group_updates[MAX_PLOT_GROUP_SIZE];
     
     Group_IDX visible_group = DEFAULT_PLOT_GROUP_IDX;
     Visualization_Mode vis_mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+
+    Theme_Colors theme_colors = dark_theme_colors;
 
     bool window_visible = false;
     bool terminate = false;
@@ -257,40 +318,13 @@ struct Plot_State_Update {
                 plot_group_updates[group_idx].reset();
             }
         }
+        terminate = false;
     }
 };
 
-struct Gui {
-    int target_fps = DEFAULT_FPS;
-    rl::Font font_normal;
-    rl::Font font_large;
-    float fontsize_normal = 22;
-    float fontsize_large = 24;
-    float fontspacing = 0;
-    
-    int window_width = DEFAULT_WINDOW_WIDTH;
-    int window_height = DEFAULT_WINDOW_HEIGHT;
-
-    int x_pixels_per_tick = 50;
-    int y_pixels_per_tick = 50;
-
-    Color color_backgound_2 = Color{ 0x25, 0x25, 0x25, 0xff };
-    Color color_backgound_1 = Color{ 0xff, 0xff, 0xff, 0x10 };
-    Color color_plot_screen_border = Color{ 0xff, 0xff, 0xff };
-    Color color_coordinate_axes = Color{ 0xff, 0xff, 0xff, 0x40 };
-    float plot_screen_border_width = 1;
-    int tick_mark_len = DEFAULT_TICK_MARK_LEN;
-
-    float offset_normal = 5;
-    float offset_small = 2;
-
-    float zoom_to_zero_pixel_distance_threshold = DEFAULT_ZOOM_TO_ZERO_PIXEL_DISTANCE_THRESHOLD;
-};
-
-static Gui g_gui;
-static Plot_State g_plot_state;
-static Plot_State_Update g_plot_state_update;
-static std::mutex g_plot_state_update_mutex;
+static Plotlib_State gps;
+static Plotlib_State_Update gps_update;
+static std::mutex gps_update_mutex;
 
 static Range_XY bounding_box_of_plot(Plot& plot, uint64_t begin_idx)
 {
@@ -318,7 +352,7 @@ static Range_XY bounding_box_of_plots_bounding_boxes(std::vector<Plot_IDX>& plot
 {
     Range_XY bb = { MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE };
     for (uint64_t i = 0; i < plots.size(); ++i) {
-        Plot plot = g_plot_state.plots[plots[i]];
+        Plot plot = gps.plots[plots[i]];
         bb.x_begin = plot.bb.x_begin < bb.x_begin ? plot.bb.x_begin : bb.x_begin;
         bb.x_end = plot.bb.x_end > bb.x_end ? plot.bb.x_end : bb.x_end;
         bb.y_begin = plot.bb.y_begin < bb.y_begin ? plot.bb.y_begin : bb.y_begin;
@@ -339,25 +373,28 @@ static Range_XY bounding_box_of_bounding_boxes(std::vector<Range_XY>& bbs)
     return bb;
 }
 
-static void apply_and_reset_plot_state_update()
+static void apply_and_reset_gps_update()
 {
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    g_plot_state.visible_group = g_plot_state_update.visible_group;
-    g_plot_state.window_visible = g_plot_state_update.window_visible;
-    g_plot_state.vis_mode = g_plot_state_update.vis_mode;
+    gps.visible_group = gps_update.visible_group;
+    gps.window_visible = gps_update.window_visible;
+    gps.vis_mode = gps_update.vis_mode;
+    gps.terminate = gps_update.terminate;
 
-    if (!g_plot_state.window_visible) {
-        g_plot_state_update_mutex.unlock();
+    if (!gps.window_visible) {
+        gps_update_mutex.unlock();
         return;
     }
+    
+    gps.gui.colors = gps_update.theme_colors;
 
     for (Plot_IDX plot_idx = 0; plot_idx < MAX_PLOT_SIZE; ++plot_idx)
     {
-        Plot_Update& update = g_plot_state_update.plot_updates[plot_idx];
+        Plot_Update& update = gps_update.plot_updates[plot_idx];
         if (update.empty_update) continue;
 
-        Plot& plot = g_plot_state.plots[plot_idx];
+        Plot& plot = gps.plots[plot_idx];
 
         if (!plot.initialized) {
             int label_len = 12; // should be enough for "[plot_idx]"
@@ -426,10 +463,10 @@ static void apply_and_reset_plot_state_update()
 
     for (Group_IDX group_idx = 0; group_idx < MAX_PLOT_GROUP_SIZE; ++group_idx)
     {
-        Plot_Group_Update& update = g_plot_state_update.plot_group_updates[group_idx];
+        Plot_Group_Update& update = gps_update.plot_group_updates[group_idx];
         if (update.empty_update) continue;
         
-        Plot_Group& group = g_plot_state.plot_groups[group_idx];
+        Plot_Group& group = gps.plot_groups[group_idx];
 
         if (!group.initialized) {
             int label_len = 24; // should be enough for "[group_idx]"
@@ -471,9 +508,9 @@ static void apply_and_reset_plot_state_update()
         }
     }
 
-    g_plot_state_update.reset();
+    gps_update.reset();
     
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
 }
 
 static double linear_map(double x, double in_min, double in_max, double out_min, double out_max) {
@@ -510,6 +547,10 @@ static void gui_update_plot_range_interactive_mode(Range_XY& plot_range, rl::Rec
         zoom_factor_y = 1.0;
     }
 
+    if (mouse_wheel_delta) {
+        gps.gui.zoom_resize_cooldown = 2;
+    }
+
     auto x_to_screenspace = [=](double x) -> float {
         return linear_map(x, plot_range.x_begin, plot_range.x_end, (double) plot_screen.x, (double) plot_screen.x + plot_screen.width);
     };
@@ -523,11 +564,11 @@ static void gui_update_plot_range_interactive_mode(Range_XY& plot_range, rl::Rec
     double zoom_center_y = y_to_plotspace(mouse_pos.y);
 
     // prefer zooming to the origin / to the x=0, y=0 coordinate axes
-    if (std::abs(x_to_screenspace(0) - mouse_pos.x) < g_gui.zoom_to_zero_pixel_distance_threshold) {
+    if (std::abs(x_to_screenspace(0) - mouse_pos.x) < gps.gui.zoom_to_zero_pixel_distance_threshold) {
         zoom_center_x = 0;
     }
 
-    if (std::abs(y_to_screenspace(0) - mouse_pos.y) < g_gui.zoom_to_zero_pixel_distance_threshold) {
+    if (std::abs(y_to_screenspace(0) - mouse_pos.y) < gps.gui.zoom_to_zero_pixel_distance_threshold) {
         zoom_center_y = 0;
     }
 
@@ -555,7 +596,7 @@ struct Ticks {
     float y_text_width_max = 0;
 };
 
-static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot_range, int x_pixels_per_tick = g_gui.x_pixels_per_tick)
+static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot_range, int x_pixels_per_tick = gps.gui.x_pixels_per_tick)
 {
     auto calculate_tick_spacing = [](double begin, double end, int tick_count) -> double {
         double raw_step = (end - begin) / tick_count;
@@ -587,7 +628,7 @@ static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot
     };
 
     ticks.x_count = std::min((int) std::floor(bounds.width / x_pixels_per_tick), MAX_TICK_MARK_COUNT);
-    ticks.y_count = std::min((int) std::floor(bounds.height / g_gui.y_pixels_per_tick), MAX_TICK_MARK_COUNT);
+    ticks.y_count = std::min((int) std::floor(bounds.height / gps.gui.y_pixels_per_tick), MAX_TICK_MARK_COUNT);
 
     ticks.x_spacing = calculate_tick_spacing(plot_range.x_begin, plot_range.x_end, ticks.x_count);
     ticks.x_begin = ceil(plot_range.x_begin / ticks.x_spacing) * ticks.x_spacing;
@@ -602,7 +643,7 @@ static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot
         
         snprintf(ticks.x_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%.14g", x);
         remove_excessive_trailing_zeros(ticks.x_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH);
-        ticks.x_text_width[tick_idx] = MeasureTextEx(g_gui.font_normal, ticks.x_text[tick_idx], g_gui.fontsize_normal, g_gui.fontspacing).x;
+        ticks.x_text_width[tick_idx] = MeasureTextEx(gps.gui.font_normal, ticks.x_text[tick_idx], gps.gui.fontsize_normal, gps.gui.fontspacing).x;
         ticks.x_text_width_max = ticks.x_text_width[tick_idx] > ticks.x_text_width_max ? ticks.x_text_width[tick_idx] : ticks.x_text_width_max;
     }
 
@@ -617,69 +658,68 @@ static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot
         if (std::abs(y) < ticks.y_spacing * 1e-3) y = 0.0;
         snprintf(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%.14g", y);
         remove_excessive_trailing_zeros(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH);
-        ticks.y_text_width[tick_idx] = MeasureTextEx(g_gui.font_normal, ticks.y_text[tick_idx], g_gui.fontsize_normal, g_gui.fontspacing).x;
+        ticks.y_text_width[tick_idx] = MeasureTextEx(gps.gui.font_normal, ticks.y_text[tick_idx], gps.gui.fontsize_normal, gps.gui.fontspacing).x;
         ticks.y_text_width_max = ticks.y_text_width[tick_idx] > ticks.y_text_width_max ? ticks.y_text_width[tick_idx] : ticks.y_text_width_max;
     }
 }
 
 void gui_loop()
 {
-    static bool window_is_init = false;
-
-    Range_XY& plot_range = g_plot_state.plot_range;
-    rl::Rectangle& plot_screen = g_plot_state.plot_screen;
+    Range_XY& plot_range = gps.plot_range;
+    rl::Rectangle& plot_screen = gps.plot_screen;
     
     while (true)
     {
-        apply_and_reset_plot_state_update();
+        apply_and_reset_gps_update();
                 
-        if (!window_is_init && g_plot_state.window_visible) {
+        if (!gps.window_is_init && gps.window_visible) {
             rl::SetConfigFlags(rl::FLAG_WINDOW_RESIZABLE);
             rl::SetTraceLogLevel(rl::LOG_ERROR);
-            rl::InitWindow(g_gui.window_width, g_gui.window_height, "Plotlib Window");
-            rl::SetTargetFPS(g_gui.target_fps);
-            g_gui.font_normal = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, g_gui.fontsize_normal, nullptr, 0);
-            g_gui.font_large = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, g_gui.fontsize_large, nullptr, 0);
-            window_is_init = true;
+            rl::InitWindow(gps.gui.window_width, gps.gui.window_height, "Plotlib");
+            rl::SetTargetFPS(gps.gui.target_fps);
+            gps.gui.font_normal = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, gps.gui.fontsize_normal, nullptr, 0);
+            gps.gui.font_large = rl::LoadFontFromMemory(".ttf", gui_font_binary_ttf, gui_font_binary_ttf_len, gps.gui.fontsize_large, nullptr, 0);
+            gps.window_is_init = true;
         }
 
-        if (window_is_init && rl::WindowShouldClose()) {
+        if (gps.window_is_init && (rl::WindowShouldClose() || gps.terminate)) {
             rl::CloseWindow();
-            window_is_init = false;
-            g_plot_state.window_visible = false;
+            gps.window_is_init = false;
+            gps.window_visible = false;
+            gps.terminate = false;
             
-            // This is a special occasions where we need to mutate the 'g_plot_state_update' from within the gui-thread.
+            // This is a special occasions where we need to mutate the 'gps_update' from within the gui-thread.
             // Overwriting the commands from the api-functions like this should only happen when absolutely necessary.
-            g_plot_state_update_mutex.lock();
-            g_plot_state_update.window_visible = false;
-            g_plot_state_update_mutex.unlock();
-            g_plot_state.window_visible = false;
+            gps_update_mutex.lock();
+            gps_update.window_visible = false;
+            gps_update_mutex.unlock();
+            gps.window_visible = false;
 
             std::this_thread::sleep_for(std::chrono::microseconds(1000));
             continue;
         }
 
-        if (!g_plot_state.window_visible) {
+        if (!gps.window_visible) {
             std::this_thread::sleep_for(std::chrono::microseconds(1000));
             continue;
         }
 
-        g_gui.window_width = rl::GetScreenWidth();
-        g_gui.window_height = rl::GetScreenHeight();
+        gps.gui.window_width = rl::GetScreenWidth();
+        gps.gui.window_height = rl::GetScreenHeight();
 
-        rl::Rectangle bounds = {0, 0, (float) g_gui.window_width, (float) g_gui.window_height};
+        rl::Rectangle bounds = {0, 0, (float) gps.gui.window_width, (float) gps.gui.window_height};
 
         rl::BeginDrawing();
         {
-            Plot_Group& group = g_plot_state.plot_groups[g_plot_state.visible_group];
+            Plot_Group& group = gps.plot_groups[gps.visible_group];
 
             // Draw Background
 
-            rl::DrawRectangleRec(bounds, to_rl_color(g_gui.color_backgound_2));
+            rl::DrawRectangleRec(bounds, gps.gui.colors.backgound);
 
             // Determine the plot range (The xy-range in plotspace that should be displayed)
 
-            switch (g_plot_state.vis_mode.type) {
+            switch (gps.vis_mode.type) {
             case Visualization_Mode::INTERACTIVE:
                 gui_update_plot_range_interactive_mode(plot_range, plot_screen);
                 break;
@@ -688,16 +728,16 @@ void gui_loop()
                 break;
             case Visualization_Mode::SHOW_X_RANGE_OF_TAIL:
                 plot_range = bounding_box_of_plots_bounding_boxes(group.plots);
-                plot_range.x_begin = plot_range.x_end - g_plot_state.vis_mode.x_range;
+                plot_range.x_begin = plot_range.x_end - gps.vis_mode.x_range;
                 break;
             case Visualization_Mode::SHOW_N_POINTS_OF_TAIL:
             {
                 std::vector<Range_XY> bounding_boxes(group.plots.size());
                 for (uint64_t i = 0; i < group.plots.size(); ++i) {
-                    Plot& plot = g_plot_state.plots[group.plots[i]];
+                    Plot& plot = gps.plots[group.plots[i]];
                     uint64_t plot_points_begin_idx = 0;
-                    if (g_plot_state.vis_mode.n_points < plot.points_y.size()) {
-                        plot_points_begin_idx = plot.points_y.size() - g_plot_state.vis_mode.n_points;
+                    if (gps.vis_mode.n_points < plot.points_y.size()) {
+                        plot_points_begin_idx = plot.points_y.size() - gps.vis_mode.n_points;
                     }
                     bounding_boxes[i] = bounding_box_of_plot(plot, plot_points_begin_idx);
                 }
@@ -705,42 +745,12 @@ void gui_loop()
             }
             break;
             case Visualization_Mode::SHOW_SPECIFIC_PLOT:
-                assert(g_plot_state.vis_mode.specific_plot != INVALID_IDX);
-                plot_range = bounding_box_of_plot(g_plot_state.plots[g_plot_state.vis_mode.specific_plot], 0);
+                assert(gps.vis_mode.specific_plot != INVALID_IDX);
+                plot_range = bounding_box_of_plot(gps.plots[gps.vis_mode.specific_plot], 0);
                 break;
             }
 
             // Fix the plot range if it is malformed
-
-            auto clamp_plot_range = [](double& val) -> bool {
-                if (val > MAX_PLOTRANGE_VALUE) {
-                    val = MAX_PLOTRANGE_VALUE;
-                    return true;
-                }
-                else if (val < -MAX_PLOTRANGE_VALUE) {
-                    val = -MAX_PLOTRANGE_VALUE;
-                    return true;
-                }
-                else if (val > 0 && val < MIN_PLOTRANGE_VALUE) {
-                    val = MIN_PLOTRANGE_VALUE;
-                    return true;
-                }
-                else if (val < 0 && val > -MIN_PLOTRANGE_VALUE) {
-                    val = -MIN_PLOTRANGE_VALUE;
-                    return true;
-                }
-                return false;
-            };
-
-            bool was_clamped = false;
-            was_clamped |= clamp_plot_range(plot_range.x_begin);
-            was_clamped |= clamp_plot_range(plot_range.x_end);
-            was_clamped |= clamp_plot_range(plot_range.y_begin);
-            was_clamped |= clamp_plot_range(plot_range.y_end);
-
-            if (was_clamped) {
-                printf(WARNING "Coordinates of the plot-space were clamped to the range [%g, %g]\n", MIN_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE);
-            }
 
             if (plot_range.x_begin == plot_range.x_end) {
                 plot_range.x_begin -= 0.5;
@@ -782,39 +792,43 @@ void gui_loop()
             // Draw plot legend
 
             float legend_content_width = 0;
-            if (g_plot_state.visible_group != DEFAULT_PLOT_GROUP_IDX) {
-                legend_content_width = rl::MeasureTextEx(g_gui.font_large, group.label, g_gui.fontsize_large, g_gui.fontspacing).x;
+            if (gps.visible_group != DEFAULT_PLOT_GROUP_IDX) {
+                legend_content_width = rl::MeasureTextEx(gps.gui.font_large, group.label, gps.gui.fontsize_large, gps.gui.fontspacing).x;
             }
             for (uint64_t i = 0; i < group.plots.size(); ++i) {
-                Plot& plot = g_plot_state.plots[group.plots[i]];
-                float label_text_width = rl::MeasureTextEx(g_gui.font_normal, plot.label, g_gui.fontsize_normal, g_gui.fontspacing).x;
+                Plot& plot = gps.plots[group.plots[i]];
+                float label_text_width = rl::MeasureTextEx(gps.gui.font_normal, plot.label, gps.gui.fontsize_normal, gps.gui.fontspacing).x;
                 legend_content_width = label_text_width > legend_content_width ? label_text_width : legend_content_width;
             }
 
-            float legend_x = bounds.x + bounds.width - (legend_content_width + g_gui.offset_normal);
-            float legend_y = g_gui.offset_normal;
-            float legend_width = legend_content_width + 2 * g_gui.offset_normal;
+            float legend_x = bounds.x + bounds.width - (legend_content_width + gps.gui.offset_normal);
+            float legend_y = gps.gui.offset_normal;
+            float legend_width = legend_content_width + 2 * gps.gui.offset_normal;
 
-            if (g_plot_state.visible_group != DEFAULT_PLOT_GROUP_IDX) {
-                rl::DrawTextEx(g_gui.font_large, group.label, {legend_x, legend_y}, g_gui.fontsize_large, g_gui.fontspacing, rl::WHITE);
-                legend_y += g_gui.fontsize_large + g_gui.offset_small;
+            if (gps.visible_group != DEFAULT_PLOT_GROUP_IDX) {
+                rl::DrawTextEx(gps.gui.font_large, group.label, {legend_x, legend_y}, gps.gui.fontsize_large, gps.gui.fontspacing, gps.gui.colors.text);
+                legend_y += gps.gui.fontsize_large + gps.gui.offset_small;
                 
-                rl::DrawLineV({legend_x, legend_y}, {legend_x + legend_content_width, legend_y}, rl::WHITE);
-                legend_y += g_gui.offset_small;
+                rl::DrawLineV({legend_x, legend_y}, {legend_x + legend_content_width, legend_y}, gps.gui.colors.text);
+                legend_y += gps.gui.offset_small;
             }
 
             for (uint64_t i = 0; i < group.plots.size(); ++i) {
-                Plot& plot = g_plot_state.plots[group.plots[i]];
-                rl::DrawTextEx(g_gui.font_normal, plot.label, {legend_x, legend_y}, g_gui.fontsize_normal, g_gui.fontspacing, to_rl_color(plot.color));
-                legend_y += g_gui.fontsize_normal;
+                Plot& plot = gps.plots[group.plots[i]];
+                rl::DrawTextEx(gps.gui.font_normal, plot.label, {legend_x, legend_y}, gps.gui.fontsize_normal, gps.gui.fontspacing, to_rl_color(plot.color));
+                legend_y += gps.gui.fontsize_normal;
             }
 
             // Determine the size of the plot-screen (the part of the window where the plots should be drawn into)
 
-            float left_plot_screen_offset = ticks.y_text_width_max + 2 * g_gui.offset_normal;
+            float left_plot_screen_offset = ticks.y_text_width_max + 2 * gps.gui.offset_normal;
+            if (gps.gui.zoom_resize_cooldown > 0) {
+                left_plot_screen_offset = plot_screen.x - bounds.x; // previous offset
+                gps.gui.zoom_resize_cooldown--;
+            }
             float right_plot_screen_offset = std::max((float) MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET, legend_width);
             float top_plot_screen_offset = MIN_PLOT_SCREEN_TO_BOUNDS_OFFSET;
-            float bottom_plot_screen_offset = g_gui.fontsize_normal + g_gui.offset_normal;
+            float bottom_plot_screen_offset = gps.gui.fontsize_normal + gps.gui.offset_normal;
 
             plot_screen = { bounds.x + left_plot_screen_offset,
                             bounds.y + top_plot_screen_offset,
@@ -834,47 +848,49 @@ void gui_loop()
 
             // Draw plot_screen border and ticks (tick-lines and tick-labels)
 
-            float bw = g_gui.plot_screen_border_width;
+            float bw = gps.gui.plot_screen_border_width;
             rl::DrawRectangleLinesEx({plot_screen.x - bw, plot_screen.y - bw, plot_screen.width + 2*bw, plot_screen.height + 2*bw},
-                                     bw, to_rl_color(g_gui.color_plot_screen_border));
+                                     bw, gps.gui.colors.plot_screen_border);
             
             int tick_idx = 0;
             for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
                 float x_screenspace = x_to_screenspace(x);
-                rl::DrawLine(x_screenspace, plot_screen.y, x_screenspace, plot_screen.y + plot_screen.height, to_rl_color(g_gui.color_backgound_1));
-                rl::DrawTextEx(g_gui.font_normal, ticks.x_text[tick_idx], {x_screenspace, plot_screen.y + plot_screen.height},
-                           g_gui.fontsize_normal, g_gui.fontspacing, rl::WHITE);
+                rl::DrawLine(x_screenspace, plot_screen.y, x_screenspace, plot_screen.y + plot_screen.height, gps.gui.colors.tick_lines);
+                rl::DrawTextEx(gps.gui.font_normal, ticks.x_text[tick_idx], {x_screenspace, plot_screen.y + plot_screen.height},
+                           gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
             }
             
             tick_idx = 0;
             for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
                 float y_screenspace = y_to_screenspace(y);
-                rl::DrawLine(plot_screen.x, y_screenspace, plot_screen.x + plot_screen.width, y_screenspace, to_rl_color(g_gui.color_backgound_1));
-                rl::DrawTextEx(g_gui.font_normal, ticks.y_text[tick_idx], {bounds.x + g_gui.offset_normal, y_screenspace - g_gui.fontsize_normal},
-                           g_gui.fontsize_normal, g_gui.fontspacing, rl::WHITE);
+                rl::DrawLine(plot_screen.x, y_screenspace, plot_screen.x + plot_screen.width, y_screenspace, gps.gui.colors.tick_lines);
+                rl::DrawTextEx(gps.gui.font_normal, ticks.y_text[tick_idx], {bounds.x + gps.gui.offset_normal, y_screenspace - gps.gui.fontsize_normal},
+                           gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
             }
 
-            // Draw x=0, y=0 coordinate-axes
+            // Draw in the plot-screen
             
-            rl::DrawLineV({plot_screen.x, y_to_screenspace(0)}, {plot_screen.x + plot_screen.width, y_to_screenspace(0)}, to_rl_color(g_gui.color_coordinate_axes));
-            rl::DrawLineV({x_to_screenspace(0), plot_screen.y}, {x_to_screenspace(0), plot_screen.y + plot_screen.height}, to_rl_color(g_gui.color_coordinate_axes));
-            
-            // Draw the plots
-
-            for (uint64_t i = 0; i < group.plots.size(); ++i)
+            rl::BeginScissorMode(plot_screen.x, plot_screen.y, plot_screen.width, plot_screen.height);
             {
-                Plot_IDX plot_idx = group.plots[i];
-                Plot& plot = g_plot_state.plots[plot_idx];
-                    
-                if (plot.empty()) continue;
+                // Draw x=0, y=0 coordinate-axes
                 
-                uint64_t plot_points_begin_idx = 0;
-                if (g_plot_state.vis_mode.type == Visualization_Mode::SHOW_N_POINTS_OF_TAIL && g_plot_state.vis_mode.n_points < plot.points_y.size()) {
-                    plot_points_begin_idx = plot.points_y.size() - g_plot_state.vis_mode.n_points;
-                }
-
-                rl::BeginScissorMode(plot_screen.x, plot_screen.y, plot_screen.width, plot_screen.height);
+                rl::DrawLineV({plot_screen.x, y_to_screenspace(0)}, {plot_screen.x + plot_screen.width, y_to_screenspace(0)}, gps.gui.colors.coordinate_axes);
+                rl::DrawLineV({x_to_screenspace(0), plot_screen.y}, {x_to_screenspace(0), plot_screen.y + plot_screen.height}, gps.gui.colors.coordinate_axes);
+            
+                // Draw the plots
+                
+                for (uint64_t i = 0; i < group.plots.size(); ++i)
                 {
+                    Plot_IDX plot_idx = group.plots[i];
+                    Plot& plot = gps.plots[plot_idx];
+                    
+                    if (plot.empty()) continue;
+                
+                    uint64_t plot_points_begin_idx = 0;
+                    if (gps.vis_mode.type == Visualization_Mode::SHOW_N_POINTS_OF_TAIL && gps.vis_mode.n_points < plot.points_y.size()) {
+                        plot_points_begin_idx = plot.points_y.size() - gps.vis_mode.n_points;
+                    }
+
                     if (plot.has_x_coordinate()) {
                         float x_prev = x_to_screenspace(plot.points_x[plot_points_begin_idx]);
                         float y_prev = y_to_screenspace(plot.points_y[plot_points_begin_idx]);
@@ -897,23 +913,23 @@ void gui_loop()
                         }
                     }
                 }
-                rl::EndScissorMode();
             }
+            rl::EndScissorMode();
 
             // Draw ticks marks (they have to be drawn over the plots)
 
             tick_idx = 0;
             for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
                 float x_screenspace = x_to_screenspace(x);
-                rl::DrawLineEx({x_screenspace, plot_screen.y + plot_screen.height - g_gui.tick_mark_len}, {x_screenspace, plot_screen.y + plot_screen.height},
-                               g_gui.plot_screen_border_width, to_rl_color(g_gui.color_plot_screen_border));
+                rl::DrawLineEx({x_screenspace, plot_screen.y + plot_screen.height - gps.gui.tick_mark_len}, {x_screenspace, plot_screen.y + plot_screen.height},
+                               gps.gui.plot_screen_border_width, gps.gui.colors.plot_screen_border);
             }
             
             tick_idx = 0;
             for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
                 float y_screenspace = y_to_screenspace(y);
-                rl::DrawLineEx({plot_screen.x, y_screenspace}, {plot_screen.x + g_gui.tick_mark_len, y_screenspace},
-                               g_gui.plot_screen_border_width, to_rl_color(g_gui.color_plot_screen_border));
+                rl::DrawLineEx({plot_screen.x, y_screenspace}, {plot_screen.x + gps.gui.tick_mark_len, y_screenspace},
+                               gps.gui.plot_screen_border_width, gps.gui.colors.plot_screen_border);
             }
         }
         rl::EndDrawing();
@@ -935,80 +951,102 @@ static void start_gui_thread_if_not_started() {
 
 PLOTAPI void plotlib_show()
 {
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.window_visible = true;
+    gps_update_mutex.lock();
+    gps_update.window_visible = true;
     start_gui_thread_if_not_started();
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
+}
+
+PLOTAPI void plotlib_hide()
+{
+    gps_update_mutex.lock();
+    gps_update.terminate = true;
+    gps_update_mutex.unlock();
+}
+
+PLOTAPI void plotlib_dark_theme()
+{
+    gps_update_mutex.lock();
+    gps_update.theme_colors = dark_theme_colors;
+    gps_update_mutex.unlock();
+}
+
+PLOTAPI void plotlib_light_theme()
+{
+    gps_update_mutex.lock();
+    gps_update.theme_colors = light_theme_colors;
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI void plotlib_mode_interactive()
 {
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::INTERACTIVE };
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::INTERACTIVE };
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI void plotlib_mode_show_n_points_of_tail(uint64_t points_count)
 {
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_N_POINTS_OF_TAIL, .n_points=points_count };
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_N_POINTS_OF_TAIL, .n_points=points_count };
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI void plotlib_mode_show_x_range_of_tail(double x_range)
 {
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_X_RANGE_OF_TAIL, .x_range=x_range };
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_X_RANGE_OF_TAIL, .x_range=x_range };
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI void plotlib_mode_fill_window()
 {
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI bool plotlib_mode_show_specific_plot(uint32_t plot_idx)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
-    g_plot_state_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_SPECIFIC_PLOT, .specific_plot=plot_idx };
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_SPECIFIC_PLOT, .specific_plot=plot_idx };
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI void plotlib_clear_all_plots()
 {
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
     for (Plot_IDX plot_idx = 0; plot_idx < MAX_PLOT_SIZE; ++plot_idx) {
-        g_plot_state_update.plot_updates[plot_idx].clear_plot();
+        gps_update.plot_updates[plot_idx].clear_plot();
     }
     for (Group_IDX group_idx = 0; group_idx < MAX_PLOT_GROUP_SIZE; ++group_idx) {
-        g_plot_state_update.plot_group_updates[group_idx].clear_group();
+        gps_update.plot_group_updates[group_idx].clear_group();
     }
     
-    g_plot_state_update_mutex.unlock();    
+    gps_update_mutex.unlock();    
 }
 
 PLOTAPI bool plot_show(Plot_IDX plot_idx)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
 
-    if (g_plot_state_update.visible_group != DEFAULT_PLOT_GROUP_IDX) {
+    if (gps_update.visible_group != DEFAULT_PLOT_GROUP_IDX) {
         group_update.clear_group();
     }
 
     group_update.new_plots.push_back(plot_idx);
     group_update.empty_update = false;
-    g_plot_state_update.visible_group = DEFAULT_PLOT_GROUP_IDX;
-    g_plot_state_update.window_visible = true;
+    gps_update.plot_updates[plot_idx].empty_update = false; // initialize the plot
+    gps_update.visible_group = DEFAULT_PLOT_GROUP_IDX;
+    gps_update.window_visible = true;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     start_gui_thread_if_not_started();
     return true;
 }
@@ -1016,74 +1054,74 @@ PLOTAPI bool plot_show(Plot_IDX plot_idx)
 PLOTAPI bool plot_hide(Plot_IDX plot_idx)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
 
     group_update.remove_plots.push_back(plot_idx);
     group_update.empty_update = false;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI void plot_hide_all()
 {
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[DEFAULT_PLOT_GROUP_IDX];
 
     group_update.clear_group();
     group_update.empty_update = false;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI bool plot_clear(uint32_t plot_idx)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    g_plot_state_update.plot_updates[plot_idx].clear_plot();
+    gps_update.plot_updates[plot_idx].clear_plot();
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    g_plot_state_update.plot_updates[plot_idx].custom_color = Color{r, g, b, a};
-    g_plot_state_update.plot_updates[plot_idx].has_custom_color = true;
-    g_plot_state_update.plot_updates[plot_idx].empty_update = false;
+    gps_update.plot_updates[plot_idx].custom_color = Color{r, g, b, a};
+    gps_update.plot_updates[plot_idx].has_custom_color = true;
+    gps_update.plot_updates[plot_idx].empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plot_set_name(uint32_t plot_idx, const char* name)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     
     plot_update.new_name = new char[strlen(name) + 1];
     strcpy(plot_update.new_name, name);
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plot_fill_numbers(uint32_t plot_idx, double* numbers, uint64_t length)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     plot_update.clear_plot();
     
     plot_update.new_points_y.resize(length);
@@ -1093,16 +1131,16 @@ PLOTAPI bool plot_fill_numbers(uint32_t plot_idx, double* numbers, uint64_t leng
     plot_update.contains_numbers = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plot_fill_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     plot_update.clear_plot();
 
     plot_update.new_points_x.resize(length);
@@ -1114,7 +1152,7 @@ PLOTAPI bool plot_fill_points_x_y(uint32_t plot_idx, double* points_x, double* p
     plot_update.contains_points = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }
 
@@ -1125,9 +1163,9 @@ PLOTAPI bool plot_fill_points_xy(uint32_t plot_idx, double* points_xy, uint64_t 
         printf(ERROR "The length provided is not divisible by 2 but 'plot_fill_points_xy' expects an array of Points.\n");
         return false;
     }
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     plot_update.clear_plot();
 
     plot_update.new_points_x.resize(length / 2);
@@ -1139,18 +1177,19 @@ PLOTAPI bool plot_fill_points_xy(uint32_t plot_idx, double* points_xy, uint64_t 
     plot_update.contains_points = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }
 
 PLOTAPI bool plot_append_number(uint32_t plot_idx, double number)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     if (plot_update.contains_points) {
         printf(ERROR "The Plot with index '%d' contains points and cannot be appended with the number '%f'.\n", plot_idx, number);
+        gps_update_mutex.unlock();
         return false;
     }
     
@@ -1158,18 +1197,19 @@ PLOTAPI bool plot_append_number(uint32_t plot_idx, double number)
     plot_update.contains_numbers = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }
 
 PLOTAPI bool plot_append_numbers(uint32_t plot_idx, double* numbers, uint64_t length)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     if (plot_update.contains_points) {
         printf(ERROR "The Plot with index '%d' contains points and cannot be appended with numbers.\n", plot_idx);
+        gps_update_mutex.unlock();
         return false;
     }
 
@@ -1181,18 +1221,19 @@ PLOTAPI bool plot_append_numbers(uint32_t plot_idx, double* numbers, uint64_t le
     plot_update.contains_numbers = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plot_append_point(uint32_t plot_idx, double point_x, double point_y)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     if (plot_update.contains_numbers) {
         printf(ERROR "The Plot with index '%d' contains numbers and cannot be appended with the point '(%f, %f)'.\n", plot_idx, point_x, point_y);
+        gps_update_mutex.unlock();
         return false;
     }
 
@@ -1201,18 +1242,19 @@ PLOTAPI bool plot_append_point(uint32_t plot_idx, double point_x, double point_y
     plot_update.contains_points = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }
 
 PLOTAPI bool plot_append_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length)
 {
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     if (plot_update.contains_numbers) {
         printf(ERROR "The Plot with index '%d' contains numbers and cannot be appended with points.\n", plot_idx);
+        gps_update_mutex.unlock();
         return false;
     }
 
@@ -1226,7 +1268,7 @@ PLOTAPI bool plot_append_points_x_y(uint32_t plot_idx, double* points_x, double*
     plot_update.contains_points = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
@@ -1237,11 +1279,12 @@ PLOTAPI bool plot_append_points_xy(uint32_t plot_idx, double* points_xy, uint64_
         printf(ERROR "The length provided is not divisible by 2 but 'plot_append_points_xy' expects an array of Points.\n");
         return false;
     }
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
     
-    Plot_Update& plot_update = g_plot_state_update.plot_updates[plot_idx];
+    Plot_Update& plot_update = gps_update.plot_updates[plot_idx];
     if (plot_update.contains_numbers) {
         printf(ERROR "The Plot with index '%d' contains numbers and cannot be appended with points.\n", plot_idx);
+        gps_update_mutex.unlock();
         return false;
     }
 
@@ -1255,19 +1298,19 @@ PLOTAPI bool plot_append_points_xy(uint32_t plot_idx, double* points_xy, uint64_
     plot_update.contains_points = true;
     plot_update.empty_update = false;
 
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plotgroup_show(uint32_t plotgroup_idx)
 {
     if (!valid_group_idx(plotgroup_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    g_plot_state_update.visible_group = plotgroup_idx;
-    g_plot_state_update.window_visible = true;
+    gps_update.visible_group = plotgroup_idx;
+    gps_update.window_visible = true;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     start_gui_thread_if_not_started();
     return true;
 }
@@ -1276,14 +1319,14 @@ PLOTAPI bool plotgroup_append(uint32_t plotgroup_idx, uint32_t plot_idx)
 {
     if (!valid_group_idx(plotgroup_idx)) return false;
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[plotgroup_idx];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[plotgroup_idx];
 
     group_update.new_plots.push_back(plot_idx);
     group_update.empty_update = false;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
@@ -1291,39 +1334,39 @@ PLOTAPI bool plotgroup_remove(uint32_t plotgroup_idx, uint32_t plot_idx)
 {
     if (!valid_group_idx(plotgroup_idx)) return false;
     if (!valid_plot_idx(plot_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[plotgroup_idx];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[plotgroup_idx];
 
     group_update.remove_plots.push_back(plot_idx);
     group_update.empty_update = false;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;
 }
 
 PLOTAPI bool plotgroup_clear(uint32_t plotgroup_idx)
 {
     if (!valid_group_idx(plotgroup_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    g_plot_state_update.plot_group_updates[plotgroup_idx].clear_group();
+    gps_update.plot_group_updates[plotgroup_idx].clear_group();
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }
 
 PLOTAPI bool plotgroup_set_name(uint32_t plotgroup_idx, const char* name)
 {
     if (!valid_group_idx(plotgroup_idx)) return false;
-    g_plot_state_update_mutex.lock();
+    gps_update_mutex.lock();
 
-    Plot_Group_Update& group_update = g_plot_state_update.plot_group_updates[plotgroup_idx];
+    Plot_Group_Update& group_update = gps_update.plot_group_updates[plotgroup_idx];
 
     group_update.new_name = new char[strlen(name) + 1];
     strcpy(group_update.new_name, name);
     group_update.empty_update = false;
             
-    g_plot_state_update_mutex.unlock();
+    gps_update_mutex.unlock();
     return true;    
 }

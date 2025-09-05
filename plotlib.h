@@ -20,13 +20,15 @@ extern "C" {
 #endif
 
 PLOTAPI void plotlib_show();
+PLOTAPI void plotlib_hide();
+PLOTAPI void plotlib_dark_theme();
+PLOTAPI void plotlib_light_theme();
 PLOTAPI void plotlib_mode_interactive();
 PLOTAPI void plotlib_mode_show_n_points_of_tail(uint64_t points_count);
 PLOTAPI void plotlib_mode_show_x_range_of_tail(double x_range);
 PLOTAPI void plotlib_mode_fill_window();
 PLOTAPI bool plotlib_mode_show_specific_plot(uint32_t plot_idx);
 PLOTAPI void plotlib_clear_all_plots();
-PLOTAPI void plotlib_enable_full_precision_display();
 
 PLOTAPI bool plot_show(uint32_t plot_idx);
 PLOTAPI bool plot_hide(uint32_t plot_idx);
