@@ -8,7 +8,11 @@
 #define PLOTLIB_MAX_PLOT_GROUP_IDX (256 - 1)
 
 #ifdef LIBTYPE_SHARED
-    #define PLOTAPI __attribute__((visibility("default")))
+    #ifdef _WIN32
+        #define PLOTAPI __declspec(dllexport)
+    #else
+        #define PLOTAPI __attribute__((visibility("default")))
+    #endif
 #endif
 
 #ifndef PLOTAPI

@@ -1,5 +1,8 @@
 *.o
 *.so
+*.obj
+libplotlib.lib
+libplotlib.dll
 TODO.txt
 test.cpp
 build_test.sh

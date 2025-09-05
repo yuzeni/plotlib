@@ -1,6 +1,11 @@
 module Plotlib
 
-plotlib = "./libplotlib.so"
+plotlib = ""
+if Sys.iswindows()
+    plotlib = "./libplotlib.dll"
+else
+    plotlib = "./libplotlib.so"
+end
 
 const MAX_PLOT_IDX = 1024 - 1
 const MAX_PLOT_GROUP_IDX = 256 - 1
