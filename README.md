@@ -3,7 +3,7 @@ The GUI runs on its own thread so you can inspect your data live as it's being r
 The API was designed to be convenient to use from a REPL.  
 
 <div align="center">
-<img src="https://github.com/yuzeni/plotlib/demo_screenshot.jpg" alt="demo_screenshot" width="600"/>
+<img src="https://github.com/yuzeni/plotlib/demo_screenshot.png" alt="demo_screenshot" width="600"/>
 </div>
 
 ### How to use with Julia
