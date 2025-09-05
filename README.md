@@ -1,6 +1,6 @@
-This is a plotting library for fast interactive plotting.  
+This is a stateful immediate-style plotting library.  
 The GUI runs on its own thread so you can inspect your data live as it's being received and plotted.  
-The API was designed to be convenient to use from a REPL.  
+The API was designed for creating wrappers which are easy to use from a REPL.  
 
 <div align="center">
 <img src="https://github.com/yuzeni/plotlib/blob/main/demo_screenshot.png" alt="demo_screenshot" width="600"/>
@@ -9,7 +9,7 @@ The API was designed to be convenient to use from a REPL.
 ### How to use with Julia
 
 First build the library by running `./build_shared_lib.sh` in your terminal.  
-Then start Julia and include `plotlib.jl`. You might need to update the path to the shared library.
+Then start Julia and include `plotlib.jl`. You might need to update the path to the `libplotlib.so` library.
 
 ```julia
 julia> include("path/to/plotlib.jl")
@@ -19,7 +19,7 @@ julia> for θ in 0:0.001:12π Plotlib.append_point(69, cos(θ*sin(θ)), sin(θ*c
 julia> Plotlib.interactive() # Interactive mode lets you navigate the plot with your mouse
 ```
 
-### This is the entire C-API
+### The C-API for a quick overview
 
 ```C
 void plotlib_show();
