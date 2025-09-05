@@ -128,6 +128,11 @@ struct Plot {
     std::vector<double> points_y;
 
     Color color;
+    bool show_lines = true;
+    double line_width = 1.0;
+    bool show_points = false;
+    double point_diameter = 3.0;
+    
     bool initialized = false;
     
     char* label = nullptr;
@@ -142,9 +147,12 @@ struct Plot_Update {
     std::vector<double> new_points_x;
     std::vector<double> new_points_y;
 
-
     bool has_custom_color = false;
     Color custom_color;
+    bool show_lines = true;
+    double line_width = 1.0;
+    bool show_points = false;
+    double point_diameter = 3.0;
     char* new_name = nullptr;
 
     bool empty_update = true; // true -> safe to skip the update
@@ -410,6 +418,11 @@ static void apply_and_reset_gps_update()
         if (update.has_custom_color) {
             plot.color = update.custom_color;
         }
+
+        plot.show_lines = update.show_lines;
+        plot.line_width = update.line_width;
+        plot.show_points = update.show_points;
+        plot.point_diameter = update.point_diameter;
 
         if (update.new_name) {
             int label_len = 12 + strlen(update.new_name) + 1;
@@ -898,7 +911,16 @@ void gui_loop()
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float x = x_to_screenspace(plot.points_x[i]);
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_prev, y_prev}, {x, y}, to_rl_color(plot.color));
+                            if (plot.show_lines) {
+                                // Plotting with width 1.0 implicitly explicitly with DrawLineV looks much worse than with DrawLineEx
+                                if (plot.line_width == 1.0)
+                                    rl::DrawLineV({x_prev, y_prev}, {x, y}, to_rl_color(plot.color));
+                                else
+                                    rl::DrawLineEx({x_prev, y_prev}, {x, y}, plot.line_width, to_rl_color(plot.color));
+                            }
+                            if (plot.show_points) {
+                                rl::DrawCircleV({x, y}, plot.point_diameter/2.0, to_rl_color(plot.color));
+                            }
                             x_prev = x;
                             y_prev = y;
                         }
@@ -908,7 +930,15 @@ void gui_loop()
         
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float y = y_to_screenspace(plot.points_y[i]);
-                            rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, to_rl_color(plot.color));
+                            if (plot.show_lines) {
+                                if (plot.line_width == 1.0)
+                                    rl::DrawLineV({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, to_rl_color(plot.color));
+                                else
+                                    rl::DrawLineEx({x_to_screenspace(i - 1), y_prev}, {x_to_screenspace(i), y}, plot.line_width, to_rl_color(plot.color));
+                            }
+                            if (plot.show_points) {
+                                rl::DrawCircleV({x_to_screenspace(i), y}, plot.point_diameter/2.0, to_rl_color(plot.color));
+                            }
                             y_prev = y;
                         }
                     }
@@ -1048,6 +1078,50 @@ PLOTAPI bool plot_show(Plot_IDX plot_idx)
             
     gps_update_mutex.unlock();
     start_gui_thread_if_not_started();
+    return true;
+}
+
+PLOTAPI bool plot_as_lines(uint32_t plot_idx, double line_width)
+{
+    if (!valid_plot_idx(plot_idx)) return false;
+    gps_update_mutex.lock();
+
+    gps_update.plot_updates[plot_idx].show_lines = true;
+    gps_update.plot_updates[plot_idx].show_points = false;
+    gps_update.plot_updates[plot_idx].line_width = line_width;
+    gps_update.plot_updates[plot_idx].empty_update = false;
+    
+    gps_update_mutex.unlock();
+    return true;
+}
+
+PLOTAPI bool plot_as_scatter(uint32_t plot_idx, double diameter)
+{
+    if (!valid_plot_idx(plot_idx)) return false;
+    gps_update_mutex.lock();
+
+    gps_update.plot_updates[plot_idx].show_points = true;
+    gps_update.plot_updates[plot_idx].show_lines = false;
+    gps_update.plot_updates[plot_idx].point_diameter = diameter;
+    gps_update.plot_updates[plot_idx].empty_update = false;
+    
+    gps_update_mutex.unlock();
+    return true;
+}
+
+PLOTAPI bool plot_as_scatterlines(uint32_t plot_idx, double line_width, double diameter)
+{
+    if (!valid_plot_idx(plot_idx)) return false;
+    gps_update_mutex.lock();
+
+    gps_update.plot_updates[plot_idx].show_points = true;
+    gps_update.plot_updates[plot_idx].show_lines = true;
+    gps_update.plot_updates[plot_idx].line_width = line_width;
+    gps_update.plot_updates[plot_idx].point_diameter = diameter;
+
+    gps_update.plot_updates[plot_idx].empty_update = false;
+    
+    gps_update_mutex.unlock();
     return true;
 }
 
