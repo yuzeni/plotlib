@@ -671,7 +671,7 @@ static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot
     ticks.y_begin = ceil(plot_range.y_begin / ticks.y_spacing) * ticks.y_spacing;
 
     int tick_idx = 0;
-    for (double x = ticks.x_begin; x < plot_range.x_end && tick_idx < MAX_TICK_MARK_COUNT; x += ticks.x_spacing, ++tick_idx) {
+    for (double x = ticks.x_begin; x < plot_range.x_end + ticks.x_spacing/1e-3 && tick_idx < MAX_TICK_MARK_COUNT; x += ticks.x_spacing, ++tick_idx) {
         // this is a stupid hack to make sure 0 is dispayed cleanly, it works because 0 is always included as a tick,
         // if 0 is in the plot_range. So we can find it easily by comparing x to the tick-spacing
         if (std::abs(x) < ticks.x_spacing * 1e-3) x = 0.0;
@@ -689,7 +689,7 @@ static void gui_generate_ticks(Ticks& ticks, rl::Rectangle bounds, Range_XY plot
     }
 
     tick_idx = 0;
-    for (double y = ticks.y_begin; y < plot_range.y_end && tick_idx < MAX_TICK_MARK_COUNT; y += ticks.y_spacing, ++tick_idx) {
+    for (double y = ticks.y_begin; y < plot_range.y_end + ticks.y_spacing*1e-3 && tick_idx < MAX_TICK_MARK_COUNT; y += ticks.y_spacing, ++tick_idx) {
         if (std::abs(y) < ticks.y_spacing * 1e-3) y = 0.0;
         snprintf(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH, "%.14g", y);
         remove_excessive_trailing_zeros(ticks.y_text[tick_idx], MAX_TICK_MARK_TEXT_LENGTH);
@@ -803,21 +803,21 @@ void gui_loop()
             // Fix the plot range if it is malformed
 
             if (plot_range.x_begin == plot_range.x_end) {
-                plot_range.x_begin -= 0.5;
-                plot_range.x_end += 0.5;
+                plot_range.x_begin -= 1.0;
+                plot_range.x_end += 1.0;
             }
             else if (plot_range.x_begin > plot_range.x_end) {
-                plot_range.x_begin = -0.5;
-                plot_range.x_end = 0.5;
+                plot_range.x_begin = -1.0;
+                plot_range.x_end = 1.0;
             }
             
             if (plot_range.y_begin == plot_range.y_end) {
-                plot_range.y_begin -= 0.5;
-                plot_range.y_end += 0.5;
+                plot_range.y_begin -= 1.0;
+                plot_range.y_end += 1.0;
             }
             else if (plot_range.y_begin > plot_range.y_end) {
-                plot_range.y_begin = -0.5;
-                plot_range.y_end = 0.5;
+                plot_range.y_begin = -1.0;
+                plot_range.y_end = 1.0;
             }
 
             auto limit_range_to_tolerable_precision = [](double& range_begin, double& range_end) -> void {
@@ -903,19 +903,21 @@ void gui_loop()
                                      bw, gps.gui.colors.plot_screen_border);
             
             int tick_idx = 0;
-            for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
+            for (double x = ticks.x_begin; x < plot_range.x_end + ticks.x_spacing*1e-3; x += ticks.x_spacing, ++tick_idx) {
                 float x_screenspace = x_to_screenspace(x);
                 rl::DrawLine(x_screenspace, plot_screen.y, x_screenspace, plot_screen.y + plot_screen.height, gps.gui.colors.tick_lines);
-                rl::DrawTextEx(gps.gui.font_normal, ticks.x_text[tick_idx], {x_screenspace, plot_screen.y + plot_screen.height},
-                           gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
+                rl::DrawTextEx(gps.gui.font_normal, ticks.x_text[tick_idx], {x_screenspace - ticks.x_text_width[tick_idx]/2.f, plot_screen.y + plot_screen.height},
+                               gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
             }
             
             tick_idx = 0;
-            for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
+            for (double y = ticks.y_begin; y < plot_range.y_end + ticks.y_spacing*1e-3; y += ticks.y_spacing, ++tick_idx) {
                 float y_screenspace = y_to_screenspace(y);
                 rl::DrawLine(plot_screen.x, y_screenspace, plot_screen.x + plot_screen.width, y_screenspace, gps.gui.colors.tick_lines);
-                rl::DrawTextEx(gps.gui.font_normal, ticks.y_text[tick_idx], {bounds.x + gps.gui.offset_normal, y_screenspace - gps.gui.fontsize_normal},
-                           gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
+                float text_x = plot_screen.x - (ticks.y_text_width[tick_idx] + gps.gui.offset_normal);
+                float text_y = std::min(plot_screen.y + plot_screen.height - gps.gui.fontsize_normal,
+                                        std::max(plot_screen.y - 4, y_screenspace - gps.gui.fontsize_normal/2.f));
+                rl::DrawTextEx(gps.gui.font_normal, ticks.y_text[tick_idx], {text_x, text_y}, gps.gui.fontsize_normal, gps.gui.fontspacing, gps.gui.colors.text);
             }
 
             // Draw in the plot-screen
@@ -994,14 +996,14 @@ void gui_loop()
             // Draw ticks marks (they have to be drawn after the plots, because they need to be on top)
 
             tick_idx = 0;
-            for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
+            for (double x = ticks.x_begin; x < plot_range.x_end + ticks.x_spacing*1e-3; x += ticks.x_spacing, ++tick_idx) {
                 float x_screenspace = x_to_screenspace(x);
                 rl::DrawLineEx({x_screenspace, plot_screen.y + plot_screen.height - gps.gui.tick_mark_len}, {x_screenspace, plot_screen.y + plot_screen.height},
                                gps.gui.plot_screen_border_width, gps.gui.colors.plot_screen_border);
             }
             
             tick_idx = 0;
-            for (double y = ticks.y_begin; y < plot_range.y_end; y += ticks.y_spacing, ++tick_idx) {
+            for (double y = ticks.y_begin; y < plot_range.y_end + ticks.y_spacing*1e-3; y += ticks.y_spacing, ++tick_idx) {
                 float y_screenspace = y_to_screenspace(y);
                 rl::DrawLineEx({plot_screen.x, y_screenspace}, {plot_screen.x + gps.gui.tick_mark_len, y_screenspace},
                                gps.gui.plot_screen_border_width, gps.gui.colors.plot_screen_border);

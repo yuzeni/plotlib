@@ -8,12 +8,15 @@ The API was designed for creating wrappers which are easy to use from a REPL.
 
 ### How to use with Julia
 
-First build the library by running `./build_shared_lib.sh` in your terminal.  
-Then start Julia and include `plotlib.jl`. You might need to update the path to the `libplotlib.so` library.
+Build plotlib with GCC on Linux using `./build_shared_lib.sh`  
+Or with MSVC on Windows by running `build_shared_lib.bat` from the Microsoft Visual Studio _"x64 Native Tools Command Prompt"_ or from any command prompt with the `vcvars64.bat` environment.  
+
+For `plotlib.jl` to find the shared library they need to be in the same directory.  
+
+Now start Julia and include `plotlib.jl`.
 
 ```julia
 julia> include("path/to/plotlib.jl")
-julia> Plotlib.plotlib = "path/to/libplotlib.so" # you don't need this if you started julia in this projects directory
 julia> Plotlib.show(4) # shows the Plot at index 4
 julia> Plotlib.track_latest_values(1, 1)
 julia> for theta in 0:0.001:6pi # draw a Kandinsky
@@ -63,11 +66,3 @@ PLOTAPI bool plotgroup_remove(uint32_t plotgroup_idx, uint32_t plot_idx);
 PLOTAPI bool plotgroup_clear(uint32_t plotgroup_idx);
 PLOTAPI bool plotgroup_set_name(uint32_t plotgroup_idx, const char* name);
 ```
-
-
-
-
-
-
-
-
