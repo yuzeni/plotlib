@@ -2,9 +2,9 @@ module Plotlib
 
 plotlib = ""
 if Sys.iswindows()
-    plotlib = "./libplotlib.dll"
+    plotlib = "$(@__DIR__)\\libplotlib.dll"
 else
-    plotlib = "./libplotlib.so"
+    plotlib = "$(@__DIR__)/libplotlib.so"
 end
 
 const MAX_PLOT_IDX = 1024 - 1
