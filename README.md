@@ -14,46 +14,60 @@ Then start Julia and include `plotlib.jl`. You might need to update the path to 
 ```julia
 julia> include("path/to/plotlib.jl")
 julia> Plotlib.plotlib = "path/to/libplotlib.so" # you don't need this if you started julia in this projects directory
-julia> Plotlib.show(69) # shows the Plot at index 69
-julia> for θ in 0:0.001:12π Plotlib.append_point(69, cos(θ*sin(θ)), sin(θ*cos(θ))) end # draw a kandinsky
+julia> Plotlib.show(4) # shows the Plot at index 4
+julia> Plotlib.track_latest_values(1, 1)
+julia> for theta in 0:0.001:6pi # draw a Kandinsky
+           Plotlib.append_point(4, cos(theta*sin(theta)), sin(theta*cos(theta)))
+           sleep(0.001) # 1ms
+       end
 julia> Plotlib.interactive() # Interactive mode lets you navigate the plot with your mouse
 ```
 
 ### The C-API for a quick overview
 
 ```C
-void plotlib_show();
-void plotlib_hide();
-void plotlib_dark_theme();
-void plotlib_light_theme();
-void plotlib_mode_interactive();
-void plotlib_mode_show_n_points_of_tail(uint64_t points_count);
-void plotlib_mode_show_x_range_of_tail(double x_range);
-void plotlib_mode_fill_window();
-bool plotlib_mode_show_specific_plot(uint32_t plot_idx);
-void plotlib_clear_all_plots();
+PLOTAPI void plotlib_show();
+PLOTAPI void plotlib_hide();
+PLOTAPI void plotlib_dark_theme();
+PLOTAPI void plotlib_light_theme();
+PLOTAPI void plotlib_interactive();
+PLOTAPI void plotlib_track_n_points_of_tail(uint64_t points_count);
+PLOTAPI void plotlib_track_x_range_of_tail(double x_range);
+PLOTAPI void plotlib_track_latest_values(double x_padding, double y_padding);
+PLOTAPI void plotlib_track_all();
+PLOTAPI bool plotlib_track_specific_plot(uint32_t plot_idx);
+PLOTAPI void plotlib_clear_all_plots();
+PLOTAPI void plotlib_clear_everything();
 
-bool plot_show(uint32_t plot_idx);
-bool plot_hide(uint32_t plot_idx);
-void plot_hide_all();
-bool plot_clear(uint32_t plot_idx);
-bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
-bool plot_set_name(uint32_t plot_idx, const char* name);
-bool plot_as_lines(uint32_t plot_idx, double line_width);
-bool plot_as_scatter(uint32_t plot_idx, double diameter);
-bool plot_as_scatterlines(uint32_t plot_idx, double line_width, double diameter);
-bool plot_fill_numbers(uint32_t plot_idx, double* numbers, uint64_t length);
-bool plot_fill_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length);
-bool plot_fill_points_xy(uint32_t plot_idx, double* points_xy, uint64_t length);
-bool plot_append_number(uint32_t plot_idx, double number);
-bool plot_append_numbers(uint32_t plot_idx, double* numbers, uint64_t length);
-bool plot_append_point(uint32_t plot_idx, double point_x, double point_y);
-bool plot_append_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length);
-bool plot_append_points_xy(uint32_t plot_idx, double* points_xy, uint64_t length);
-    
-bool plotgroup_show(uint32_t plotgroup_idx);
-bool plotgroup_append(uint32_t plotgroup_idx, uint32_t plot_idx);
-bool plotgroup_remove(uint32_t plotgroup_idx, uint32_t plot_idx);
-bool plotgroup_clear(uint32_t plotgroup_idx);
-bool plotgroup_set_name(uint32_t plotgroup_idx, const char* name);
+PLOTAPI bool plot_show(uint32_t plot_idx);
+PLOTAPI bool plot_hide(uint32_t plot_idx);
+PLOTAPI void plot_hide_all();
+PLOTAPI bool plot_clear(uint32_t plot_idx);
+PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+PLOTAPI bool plot_set_name(uint32_t plot_idx, const char* name);
+PLOTAPI bool plot_as_lines(uint32_t plot_idx, double line_width);
+PLOTAPI bool plot_as_scatter(uint32_t plot_idx, double point_diameter);
+PLOTAPI bool plot_as_scatterlines(uint32_t plot_idx, double line_width, double point_diameter);
+PLOTAPI bool plot_fill_numbers(uint32_t plot_idx, double* numbers, uint64_t length);
+PLOTAPI bool plot_fill_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length);
+PLOTAPI bool plot_fill_points_xy(uint32_t plot_idx, double* points_xy, uint64_t length);
+PLOTAPI bool plot_append_number(uint32_t plot_idx, double number);
+PLOTAPI bool plot_append_numbers(uint32_t plot_idx, double* numbers, uint64_t length);
+PLOTAPI bool plot_append_point(uint32_t plot_idx, double point_x, double point_y);
+PLOTAPI bool plot_append_points_x_y(uint32_t plot_idx, double* points_x, double* points_y, uint64_t length);
+PLOTAPI bool plot_append_points_xy(uint32_t plot_idx, double* points_xy, uint64_t length);
+
+PLOTAPI bool plotgroup_show(uint32_t plotgroup_idx);
+PLOTAPI bool plotgroup_append(uint32_t plotgroup_idx, uint32_t plot_idx);
+PLOTAPI bool plotgroup_remove(uint32_t plotgroup_idx, uint32_t plot_idx);
+PLOTAPI bool plotgroup_clear(uint32_t plotgroup_idx);
+PLOTAPI bool plotgroup_set_name(uint32_t plotgroup_idx, const char* name);
 ```
+
+
+
+
+
+
+
+

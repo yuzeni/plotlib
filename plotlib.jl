@@ -62,32 +62,42 @@ Use Left-CTRL + Mouse-Wheel for vertical zooming
 Use Left-Schift + Mouse-Wheel for horizontal zooming
 """
 function interactive()::Nothing
-    @ccall plotlib.plotlib_mode_interactive()::Cvoid;
+    @ccall plotlib.plotlib_interactive()::Cvoid
 end
 
 "Shows the last n points/numbers of the plot."
-function show_n_points_of_tail(points_count)::Nothing
-    @ccall plotlib.plotlib_mode_show_n_points_of_tail(points_count::UInt64)::Cvoid;
+function track_n_points_of_tail(points_count)::Nothing
+    @ccall plotlib.plotlib_track_n_points_of_tail(points_count::UInt64)::Cvoid
 end
 
 "Constrains the length of the x-axis to 'x_range' and shows the right-most part of the plot."
-function show_x_range_of_tail(x_range)::Nothing
-    @ccall plotlib.plotlib_mode_show_x_range_of_tail(x_range::Float64)::Cvoid;
+function track_x_range_of_tail(x_range)::Nothing
+    @ccall plotlib.plotlib_track_x_range_of_tail(x_range::Float64)::Cvoid
+end
+
+"Focuses on the last values in the plots of the plot-group "
+function track_latest_values(x_padding=0, y_padding=0)::Nothing
+    @ccall plotlib.plotlib_track_latest_values(x_padding::Float64, y_padding::Float64)::Cvoid
 end
 
 "Fills the window with all plots which are currently displayed."
-function fill_window()::Nothing
-    @ccall plotlib.plotlib_mode_fill_window()::Cvoid;
+function track_all()::Nothing
+    @ccall plotlib.plotlib_track_all()::Cvoid;
 end
 
 "Fills the window with a specific plot, it doesn't need to be visible."
-function enlarge_specific_plot(plot_idx)::Bool
-    @ccall plotlib.plotlib_mode_show_specific_plot(plot_idx::UInt32)::Bool
+function track_specific_plot(plot_idx)::Bool
+    @ccall plotlib.plotlib_track_specific_plot(plot_idx::UInt32)::Bool
 end
 
 "Deletes all strored points/numbers in all plots."
 function clear_all_plots()::Nothing
     @ccall plotlib.plotlib_clear_all_plots()::Cvoid;
+end
+
+"Deletes all strored points/numbers in all plots and all plots from all plot-groups"
+function clear_everything()::Nothing
+    @ccall plotlib.plotlib_clear_everything()::Cvoid;
 end
 
 function show(plot_idx)::Bool

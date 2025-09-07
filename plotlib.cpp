@@ -276,14 +276,17 @@ struct Visualization_Mode {
     enum : uint32_t {
         NONE,
         INTERACTIVE,
-        SHOW_N_POINTS_OF_TAIL,
-        SHOW_X_RANGE_OF_TAIL,
-        SHOW_ENTIRE_PLOT_GROUP,
-        SHOW_SPECIFIC_PLOT,
+        TRACK_N_POINTS_OF_TAIL,
+        TRACK_X_RANGE_OF_TAIL,
+        TRACK_LAST_VALUES,
+        TRACK_ENTIRE_PLOT_GROUP,
+        TRACK_SPECIFIC_PLOT,
     };
     uint32_t type = NONE;
     uint64_t n_points = 0;
     double x_range = 0;
+    double x_padding = 0;
+    double y_padding = 0;
     Plot_IDX specific_plot = INVALID_IDX;
 };
 
@@ -292,7 +295,7 @@ struct Plotlib_State {
     Plot_Group plot_groups[MAX_PLOT_GROUP_SIZE];
 
     Group_IDX visible_group = DEFAULT_PLOT_GROUP_IDX;
-    Visualization_Mode vis_mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+    Visualization_Mode vis_mode { .type=Visualization_Mode::TRACK_ENTIRE_PLOT_GROUP };
     
     Range_XY plot_range = Range_XY{};
     rl::Rectangle plot_screen = rl::Rectangle{ 0, 0, DEFAULT_WINDOW_WIDTH, DEFAULT_WINDOW_HEIGHT };
@@ -308,7 +311,7 @@ struct Plotlib_State_Update {
     Plot_Group_Update plot_group_updates[MAX_PLOT_GROUP_SIZE];
     
     Group_IDX visible_group = DEFAULT_PLOT_GROUP_IDX;
-    Visualization_Mode vis_mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+    Visualization_Mode vis_mode { .type=Visualization_Mode::TRACK_ENTIRE_PLOT_GROUP };
 
     Theme_Colors theme_colors = dark_theme_colors;
 
@@ -334,9 +337,23 @@ static Plotlib_State gps;
 static Plotlib_State_Update gps_update;
 static std::mutex gps_update_mutex;
 
+static Range_XY bounding_box_of_points(std::vector<Point>& points)
+{
+    Range_XY bb = { MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE };
+    for (uint64_t i = 0; i < points.size(); ++i) {
+        bb.x_begin = points[i].x < bb.x_begin ? points[i].x : bb.x_begin;
+        bb.x_end = points[i].x > bb.x_end ? points[i].x : bb.x_end;
+        bb.y_begin = points[i].y < bb.y_begin ? points[i].y : bb.y_begin;
+        bb.y_end = points[i].y > bb.y_end ? points[i].y : bb.y_end;
+    }
+    return bb;
+}
+
 static Range_XY bounding_box_of_plot(Plot& plot, uint64_t begin_idx)
 {
     Range_XY bb = { MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE, MAX_PLOTRANGE_VALUE, -MAX_PLOTRANGE_VALUE };
+    if (plot.empty()) return bb;
+    
     if (plot.has_x_coordinate()) {
         for (uint64_t i = begin_idx; i < plot.points_y.size(); ++i) {
             bb.x_begin = plot.points_x[i] < bb.x_begin ? plot.points_x[i] : bb.x_begin;
@@ -459,7 +476,7 @@ static void apply_and_reset_gps_update()
                 plot.bb.y_end = update.new_points_y[i] > plot.bb.y_end ? update.new_points_y[i] : plot.bb.y_end;
             }
         }
-        else {
+        else if (update.contains_numbers) {
             assert(update.new_points_x.size() == 0);
             plot.points_y.resize(new_length);
 
@@ -471,6 +488,11 @@ static void apply_and_reset_gps_update()
                 plot.bb.y_begin = update.new_points_y[i] < plot.bb.y_begin ? update.new_points_y[i] : plot.bb.y_begin;
                 plot.bb.y_end = update.new_points_y[i] > plot.bb.y_end ? update.new_points_y[i] : plot.bb.y_end;
             }
+        }
+        else {
+            assert(new_length == 0);
+            plot.points_x.resize(new_length);
+            plot.points_y.resize(new_length);
         }
     }
 
@@ -736,15 +758,14 @@ void gui_loop()
             case Visualization_Mode::INTERACTIVE:
                 gui_update_plot_range_interactive_mode(plot_range, plot_screen);
                 break;
-            case Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP:
+            case Visualization_Mode::TRACK_ENTIRE_PLOT_GROUP:
                 plot_range = bounding_box_of_plots_bounding_boxes(group.plots);
                 break;
-            case Visualization_Mode::SHOW_X_RANGE_OF_TAIL:
+            case Visualization_Mode::TRACK_X_RANGE_OF_TAIL:
                 plot_range = bounding_box_of_plots_bounding_boxes(group.plots);
                 plot_range.x_begin = plot_range.x_end - gps.vis_mode.x_range;
                 break;
-            case Visualization_Mode::SHOW_N_POINTS_OF_TAIL:
-            {
+            case Visualization_Mode::TRACK_N_POINTS_OF_TAIL: {
                 std::vector<Range_XY> bounding_boxes(group.plots.size());
                 for (uint64_t i = 0; i < group.plots.size(); ++i) {
                     Plot& plot = gps.plots[group.plots[i]];
@@ -755,9 +776,25 @@ void gui_loop()
                     bounding_boxes[i] = bounding_box_of_plot(plot, plot_points_begin_idx);
                 }
                 plot_range = bounding_box_of_bounding_boxes(bounding_boxes);
-            }
-            break;
-            case Visualization_Mode::SHOW_SPECIFIC_PLOT:
+            } break;
+            case Visualization_Mode::TRACK_LAST_VALUES: {
+                std::vector<Point> latest_points;
+                for (uint64_t i = 0; i < group.plots.size(); ++i) {
+                    Plot& plot = gps.plots[group.plots[i]];
+                    if (plot.empty()) continue;
+                    if (plot.has_x_coordinate()) latest_points.push_back({plot.points_x.back(), plot.points_y.back()});
+                    else                         latest_points.push_back({(double) plot.points_y.size() - 1, plot.points_y.back()});
+                }
+                plot_range = Range_XY();
+                if (!latest_points.empty()) {
+                    Range_XY bb = bounding_box_of_points(latest_points);
+                    plot_range = { bb.x_begin - gps.vis_mode.x_padding,
+                                   bb.x_end + gps.vis_mode.x_padding,
+                                   bb.y_begin - gps.vis_mode.y_padding,
+                                   bb.y_end + gps.vis_mode.y_padding };
+                }
+            } break;
+            case Visualization_Mode::TRACK_SPECIFIC_PLOT:
                 assert(gps.vis_mode.specific_plot != INVALID_IDX);
                 plot_range = bounding_box_of_plot(gps.plots[gps.vis_mode.specific_plot], 0);
                 break;
@@ -900,19 +937,23 @@ void gui_loop()
                     if (plot.empty()) continue;
                 
                     uint64_t plot_points_begin_idx = 0;
-                    if (gps.vis_mode.type == Visualization_Mode::SHOW_N_POINTS_OF_TAIL && gps.vis_mode.n_points < plot.points_y.size()) {
+                    if (gps.vis_mode.type == Visualization_Mode::TRACK_N_POINTS_OF_TAIL && gps.vis_mode.n_points < plot.points_y.size()) {
                         plot_points_begin_idx = plot.points_y.size() - gps.vis_mode.n_points;
                     }
 
                     if (plot.has_x_coordinate()) {
                         float x_prev = x_to_screenspace(plot.points_x[plot_points_begin_idx]);
                         float y_prev = y_to_screenspace(plot.points_y[plot_points_begin_idx]);
+                        
+                        if (plot.show_points) {
+                            rl::DrawCircleV({x_prev, y_prev}, plot.point_diameter/2.0, to_rl_color(plot.color));
+                        }
         
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float x = x_to_screenspace(plot.points_x[i]);
                             float y = y_to_screenspace(plot.points_y[i]);
                             if (plot.show_lines) {
-                                // Plotting with width 1.0 implicitly explicitly with DrawLineV looks much worse than with DrawLineEx
+                                // Plotting with width 1.0 through DrawLineV looks much worse than through DrawLineEx
                                 if (plot.line_width == 1.0)
                                     rl::DrawLineV({x_prev, y_prev}, {x, y}, to_rl_color(plot.color));
                                 else
@@ -927,6 +968,10 @@ void gui_loop()
                     }
                     else {
                         float y_prev = y_to_screenspace(plot.points_y[plot_points_begin_idx]);
+
+                        if (plot.show_points) {
+                            rl::DrawCircleV({x_to_screenspace(plot_points_begin_idx), y_prev}, plot.point_diameter/2.0, to_rl_color(plot.color));
+                        }
         
                         for (uint64_t i = plot_points_begin_idx + 1; i < plot.points_y.size(); ++i) {
                             float y = y_to_screenspace(plot.points_y[i]);
@@ -946,7 +991,7 @@ void gui_loop()
             }
             rl::EndScissorMode();
 
-            // Draw ticks marks (they have to be drawn over the plots)
+            // Draw ticks marks (they have to be drawn after the plots, because they need to be on top)
 
             tick_idx = 0;
             for (double x = ticks.x_begin; x < plot_range.x_end; x += ticks.x_spacing, ++tick_idx) {
@@ -1008,39 +1053,46 @@ PLOTAPI void plotlib_light_theme()
     gps_update_mutex.unlock();
 }
 
-PLOTAPI void plotlib_mode_interactive()
+PLOTAPI void plotlib_interactive()
 {
     gps_update_mutex.lock();
     gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::INTERACTIVE };
     gps_update_mutex.unlock();
 }
 
-PLOTAPI void plotlib_mode_show_n_points_of_tail(uint64_t points_count)
+PLOTAPI void plotlib_track_n_points_of_tail(uint64_t points_count)
 {
     gps_update_mutex.lock();
-    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_N_POINTS_OF_TAIL, .n_points=points_count };
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::TRACK_N_POINTS_OF_TAIL, .n_points=points_count };
     gps_update_mutex.unlock();
 }
 
-PLOTAPI void plotlib_mode_show_x_range_of_tail(double x_range)
+PLOTAPI void plotlib_track_x_range_of_tail(double x_range)
 {
     gps_update_mutex.lock();
-    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_X_RANGE_OF_TAIL, .x_range=x_range };
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::TRACK_X_RANGE_OF_TAIL, .x_range=x_range };
     gps_update_mutex.unlock();
 }
 
-PLOTAPI void plotlib_mode_fill_window()
+PLOTAPI void plotlib_track_latest_values(double x_padding, double y_padding)
 {
     gps_update_mutex.lock();
-    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_ENTIRE_PLOT_GROUP };
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::TRACK_LAST_VALUES, .x_padding=x_padding, .y_padding=y_padding };
     gps_update_mutex.unlock();
 }
 
-PLOTAPI bool plotlib_mode_show_specific_plot(uint32_t plot_idx)
+PLOTAPI void plotlib_track_all()
+{
+    gps_update_mutex.lock();
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::TRACK_ENTIRE_PLOT_GROUP };
+    gps_update_mutex.unlock();
+}
+
+PLOTAPI bool plotlib_track_specific_plot(uint32_t plot_idx)
 {
     if (!valid_plot_idx(plot_idx)) return false;
     gps_update_mutex.lock();
-    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::SHOW_SPECIFIC_PLOT, .specific_plot=plot_idx };
+    gps_update.vis_mode = Visualization_Mode { .type=Visualization_Mode::TRACK_SPECIFIC_PLOT, .specific_plot=plot_idx };
     gps_update_mutex.unlock();
     return true;
 }
@@ -1052,11 +1104,22 @@ PLOTAPI void plotlib_clear_all_plots()
     for (Plot_IDX plot_idx = 0; plot_idx < MAX_PLOT_SIZE; ++plot_idx) {
         gps_update.plot_updates[plot_idx].clear_plot();
     }
+    
+    gps_update_mutex.unlock();    
+}
+
+PLOTAPI void plotlib_clear_everything()
+{
+    gps_update_mutex.lock();
+    
+    for (Plot_IDX plot_idx = 0; plot_idx < MAX_PLOT_SIZE; ++plot_idx) {
+        gps_update.plot_updates[plot_idx].clear_plot();
+    }
     for (Group_IDX group_idx = 0; group_idx < MAX_PLOT_GROUP_SIZE; ++group_idx) {
         gps_update.plot_group_updates[group_idx].clear_group();
     }
     
-    gps_update_mutex.unlock();    
+    gps_update_mutex.unlock();
 }
 
 PLOTAPI bool plot_show(Plot_IDX plot_idx)
