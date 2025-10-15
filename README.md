@@ -1,4 +1,4 @@
-This is a stateful immediate-style plotting library.  
+This is a stateful plotting library.  
 The GUI runs on its own thread so you can inspect your data live as it's being received and plotted.  
 The API was designed for creating wrappers which are easy to use from a REPL.  
 
@@ -6,14 +6,28 @@ The API was designed for creating wrappers which are easy to use from a REPL.
 <img src="https://github.com/yuzeni/plotlib/blob/main/demo_screenshot.png" alt="demo_screenshot" width="600"/>
 </div>
 
+### Building on linux with GCC
+
+Run `./build_shared_lib.sh` in your terminal. If it doesn't work have a look at the dependencies below.
+
+##### Dependencies
+
+1. GCC (c++ compiler)
+2. OpenGL (libGL) (for example libgl-dev package on Ubuntu/Debian)
+3. X11 (libX11) (for example libx11-dev package on Ubuntu/Debian)
+
+### Building on Windows with MSVC
+
+Run `build_shared_lib.bat` from the Microsoft Visual Studio _"x64 Native Tools Command Prompt"_ or from any command prompt with the `vcvars64.bat` environment.
+
+##### Dependencies
+
+1. Microsoft Visual Studio
+
 ### How to use with Julia
 
-Build plotlib with GCC on Linux using `./build_shared_lib.sh`  
-Or with MSVC on Windows by running `build_shared_lib.bat` from the Microsoft Visual Studio _"x64 Native Tools Command Prompt"_ or from any command prompt with the `vcvars64.bat` environment.  
-
-For `plotlib.jl` to find the shared library they need to be in the same directory.  
-
-Now start Julia and include `plotlib.jl`.
+Make sure you have a `libplotlib.so`/`libplotlib.dll` in the same directory as `plotlib.jl`.  
+Start Julia and include `plotlib.jl` (this works from any directory).
 
 ```julia
 julia> include("path/to/plotlib.jl")

@@ -1,3 +1,8 @@
+
+# API Improvements
+# plotting into a thing should show that thing
+# show help message in GUI when nothing else is displayed
+
 module Plotlib
 
 plotlib = ""
@@ -7,8 +12,13 @@ else
     plotlib = "$(@__DIR__)/libplotlib.so"
 end
 
-const MAX_PLOT_IDX = 1024 - 1
-const MAX_PLOT_GROUP_IDX = 256 - 1
+const PLOTLIB_MAX_PLOT_IDX      = 1024 - 1
+const PLOTLIB_MAX_PLOTTER_IDX   = 256 - 1
+const PLOTLIB_MAX_PLOT3D_IDX    = 1024 - 1
+const PLOTLIB_MAX_PLOTTER3D_IDX = 256 - 1
+const PLOTLIB_MAX_PANEL_IDX     = 256 - 1
+
+const DEFAULT_IDX = 0
 
 struct Color
     r::UInt8
@@ -39,165 +49,263 @@ const WHITE         = Color(0xe9, 0xe9, 0xe9, 0xff)
 const GREY          = Color(0x90, 0x90, 0x90, 0xff)
 const BLACK         = Color(0x0c, 0x0c, 0x0c, 0xff)
 
-"Shows the GUI."
-function show()::Nothing
-    @ccall plotlib.plotlib_show()::Cvoid
+@enum Number_Types::UInt8 begin
+    FLOAT32 = 0
+    FLOAT64 = 1
+    INT32 = 2
+    INT64 = 3
 end
 
-function hide()::Nothing
-    @ccall plotlib.plotlib_hide()::Cvoid
-end
+const Number_Types_Union = Union{Float32, Float64, Int32, Int64}
 
-function dark_theme()::Nothing
-    @ccall plotlib.plotlib_dark_theme()::Cvoid
-end
-
-function light_theme()::Nothing
-    @ccall plotlib.plotlib_light_theme()::Cvoid
-end
-
-"""
-Enables zooming and paning in the GUI.
-Use Left-CTRL + Mouse-Wheel for vertical zooming
-Use Left-Schift + Mouse-Wheel for horizontal zooming
-"""
-function interactive()::Nothing
-    @ccall plotlib.plotlib_interactive()::Cvoid
-end
-
-"Shows the last n points/numbers of the plot."
-function track_n_points_of_tail(points_count)::Nothing
-    @ccall plotlib.plotlib_track_n_points_of_tail(points_count::UInt64)::Cvoid
-end
-
-"Constrains the length of the x-axis to 'x_range' and shows the right-most part of the plot."
-function track_x_range_of_tail(x_range)::Nothing
-    @ccall plotlib.plotlib_track_x_range_of_tail(x_range::Float64)::Cvoid
-end
-
-"Focuses on the last values in the plots of the plot-group "
-function track_latest_values(x_padding=0, y_padding=0)::Nothing
-    @ccall plotlib.plotlib_track_latest_values(x_padding::Float64, y_padding::Float64)::Cvoid
-end
-
-"Fills the window with all plots which are currently displayed."
-function track_all()::Nothing
-    @ccall plotlib.plotlib_track_all()::Cvoid;
-end
-
-"Fills the window with a specific plot, it doesn't need to be visible."
-function track_specific_plot(plot_idx)::Bool
-    @ccall plotlib.plotlib_track_specific_plot(plot_idx::UInt32)::Bool
-end
-
-"Deletes all strored points/numbers in all plots."
-function clear_all_plots()::Nothing
-    @ccall plotlib.plotlib_clear_all_plots()::Cvoid;
-end
-
-"Deletes all strored points/numbers in all plots and all plots from all plot-groups"
-function clear_everything()::Nothing
-    @ccall plotlib.plotlib_clear_everything()::Cvoid;
-end
-
-function show(plot_idx)::Bool
-    @ccall plotlib.plot_show(plot_idx::UInt32)::Bool
-end
-
-function hide(plot_idx)::Bool
-    @ccall plotlib.plot_hide(plot_idx::UInt32)::Bool
-end
-
-function hide_all_plots()::Nothing
-    @ccall plotlib.plot_hide_all()::Cvoid
-end
-
-"Deletes all strored points/numbers in the plot."
-function clear(plot_idx)::Bool
-    @ccall plotlib.plot_clear(plot_idx::UInt32)::Bool
-end
-
-function set_plot_color(plot_idx, color::Color)::Bool
-    @ccall plotlib.plot_set_color(plot_idx::UInt32, color.r::UInt8, color.g::UInt8, color.b::UInt8, color.a::UInt8)::Bool
-end
-
-function set_plot_name(plot_idx, name::String)::Bool
-    @ccall plotlib.plot_set_name(plot_idx::UInt32, name::Cstring)::Bool
-end
-
-function as_lines(plot_idx; line_width=1.0)::Bool
-    @ccall plotlib.plot_as_lines(plot_idx::UInt32, line_width::Float64)::Bool
-end
-
-function as_scatter(plot_idx; diameter=3.0)::Bool
-    @ccall plotlib.plot_as_scatter(plot_idx::UInt32, diameter::Float64)::Bool
-end
-
-function as_scatterlines(plot_idx; line_width=1.0, diameter=3.0)::Bool
-    @ccall plotlib.plot_as_scatterlines(plot_idx::UInt32, line_width::Float64, diameter::Float64)::Bool
-end
-
-function fill_numbers(plot_idx, numbers::Vector{Float64})::Bool
-    @ccall plotlib.plot_fill_numbers(plot_idx::UInt32, numbers::Ptr{Float64}, length(numbers)::UInt64)::Bool
-end
-
-function fill_points_x_y(plot_idx, points_x::Vector{Float64}, points_y::Vector{Float64})::Bool
-    if length(points_x) != length(points_y)
-        println("PLOTLIB ERROR: The length of 'points_x' and 'points_y' must match.")
-        return false
+function _get_number_type(::Type{T}) where { T <: Number_Types_Union}
+    if T == Float32 return FLOAT32
+    elseif T == Float64 return FLOAT64
+    elseif T == Int32 return INT32
+    elseif T == Int64 return INT64
     end
-    return @ccall plotlib.plot_fill_points_x_y(plot_idx::UInt32, points_x::Ptr{Float64}, points_y::Ptr{Float64}, length(points_y)::UInt64)::Bool
 end
 
-function fill_points_xy(plot_idx, points_xy::Vector{Float64})::Bool
-    @ccall plotlib.plot_fill_points_xy(plot_idx::UInt32, points_xy::Ptr{Float64}, length(points_xy)::UInt64)::Bool
-end
+# Gui
 
-function append_number(plot_idx, number)::Bool
-    @ccall plotlib.plot_append_number(plot_idx::UInt32, number::Float64)::Bool
-end
+show() = @ccall plotlib.plotlib_show()::Cvoid
+hide() = @ccall plotlib.plotlib_hide()::Cvoid
 
-function append_numbers(plot_idx, numbers::Vector{Float64})::Bool
-    @ccall plotlib.plot_append_numbers(plot_idx::UInt32, numbers::Ptr{Float64}, length(numbers)::UInt64)::Bool
-end
+dark_theme()  = @ccall plotlib.plotlib_dark_theme()::Cvoid
+light_theme() = @ccall plotlib.plotlib_light_theme()::Cvoid
 
-function append_point(plot_idx, point_x, point_y)::Bool
-    @ccall plotlib.plot_append_point(plot_idx::UInt32, point_x::Float64, point_y::Float64)::Bool
-end
+"After calling this function, the first thing you 'touch' with your mouse that can become interactive will now be interactive."
+interactive() = @ccall plotlib.plotlib_interactive()::Cvoid
 
-function append_points_x_y(plot_idx, points_x::Vector{Float64}, points_y::Vector{Float64}, length::UInt64)::Bool
-    if length(points_x) != length(points_y)
-        println("PLOTLIB ERROR: The length of 'points_x' and 'points_y' must match.")
-        return false
+# clear_all_plots() = @ccall plotlib.plotlib_clear_all_plots()::Cvoid
+
+
+# Plot
+
+plot(idx = DEFAULT_IDX) = (
+    plot_idx = idx,
+    
+    show  = () -> (@ccall plotlib.plot_show(idx::UInt32)::Bool;  plot(idx)),
+    hide  = () -> (@ccall plotlib.plot_hide(idx::UInt32)::Bool;  plot(idx)),
+    clear = () -> (@ccall plotlib.plot_clear(idx::UInt32)::Bool; plot(idx)),
+    
+    set_color = (color::Color) -> (@ccall plotlib.plot_set_color(idx::UInt32, color.r::UInt8, color.g::UInt8, color.b::UInt8, color.a::UInt8)::Bool; plot(idx)),
+    set_name  = (name::String) -> (@ccall plotlib.plot_set_name(idx::UInt32, name::Cstring)::Bool;                                                   plot(idx)),
+    
+    as_lines        = (line_width=1.0) -> (@ccall plotlib.plot_as_lines(idx::UInt32, line_width::Float64)::Bool;                                           plot(idx)),
+    as_scatter      = (diameter=3.0) -> (@ccall plotlib.plot_as_scatter(idx::UInt32, diameter::Float64)::Bool;                                             plot(idx)),
+    as_scatterlines = (line_width=1.0, diameter=3.0) -> (@ccall plotlib.plot_as_scatterlines(idx::UInt32, line_width::Float64, diameter::Float64)::Bool;   plot(idx)),
+
+    fill_numbers = ((numbers::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        @ccall plotlib.plot_fill_numbers(idx::UInt32, numbers::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(numbers)::UInt64)::Bool
+        plot(idx)
+    end,
+
+    fill_points_x_y = ((points_x::AbstractVector{NumberT}, points_y::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        if length(points_x) != length(points_y)
+            println("PLOTLIB ERROR: The length of 'points_x' and 'points_y' must match.")
+            return false
+        end
+        @ccall plotlib.plot_fill_points_x_y(idx::UInt32, points_x::Ptr{Cvoid}, points_y::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(points_y)::UInt64)::Bool
+        plot(idx)
+    end,
+
+    fill_points_xy = ((points_xy::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        @ccall plotlib.plot_fill_points_xy(idx::UInt32, points_xy::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(points_xy)::UInt64)::Bool
+        plot(idx)
+    end,
+
+    append_number = (number) -> begin
+        @ccall plotlib.plot_append_number(idx::UInt32, number::Float64)::Bool
+        plot(idx)
+    end,
+    
+    append_numbers = ((numbers::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        @ccall plotlib.plot_append_numbers(idx::UInt32, numbers::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(numbers)::UInt64)::Bool
+        plot(idx)
+    end,
+
+    append_point = (point_x, point_y) -> begin
+        @ccall plotlib.plot_append_point(idx::UInt32, point_x::Float64, point_y::Float64)::Bool
+        plot(idx)
+    end,
+
+    append_points_x_y = ((points_x::AbstractVector{NumberT}, points_y::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        if length(points_x) != length(points_y)
+            println("PLOTLIB ERROR: The length of 'points_x' and 'points_y' must match.")
+            return false
+        end
+        @ccall plotlib.plot_append_points_x_y(idx::UInt32, points_x::Ptr{Cvoid}, points_y::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(points_y)::UInt64)::Bool
+        plot(idx)
+    end,
+
+    append_points_xy = ((points_xy::AbstractVector{NumberT}) where { NumberT <: Number_Types_Union }) -> begin
+        @ccall plotlib.plot_append_points_xy(idx::UInt32, points_xy::Ptr{Cvoid}, _get_number_type(NumberT)::UInt8, length(points_xy)::UInt64)::Bool
+        plot(idx)
+    end,
+)
+
+# Plotter
+
+plotter(idx = DEFAULT_IDX) = (
+    show  = () -> (@ccall plotlib.plotter_show(idx::UInt32)::Bool;  plotter(idx)),
+    clear = () -> (@ccall plotlib.plotter_clear(idx::UInt32)::Bool; plotter(idx)),
+    
+    add_plot    = (plot_idx) -> (@ccall plotlib.plotter_add_plot(idx::UInt32, plot_idx::UInt32)::Bool;    plotter(idx)),
+    remove_plot = (plot_idx) -> (@ccall plotlib.plotter_remove_plot(idx::UInt32, plot_idx::UInt32)::Bool; plotter(idx)),
+
+    set_name = (name::String) -> (@ccall plotlib.plotter_set_name(idx::UInt32, name::Cstring)::Bool; plotter(idx)),
+    
+    track_latest          = (points_count) -> (@ccall plotlib.plotter_track_latest(idx::UInt32, points_count::UInt64)::Bool; plotter(idx)),
+    track_latest_range_x  = (x_range) -> (@ccall plotlib.plotter_track_latest_range_x(idx::UInt32, x_range::Float64)::Bool; plotter(idx)),
+    track_latest_range_xy = (x_range, y_range) -> (@ccall plotlib.plotter_track_latest_range_xy(idx::UInt32, x_range::Float64, y_range::Float64)::Bool; plotter(idx)),
+    track_all             = () -> (@ccall plotlib.plotter_track_all(idx::UInt32)::Bool; plotter(idx)),
+    track_specific_plot   = (plot_idx) -> (@ccall plotlib.plotter_track_specific_plot(idx::UInt32, plot_idx::UInt32)::Bool; plotter(idx)),
+)
+
+# Plot3d
+
+plot3d(idx = DEFAULT_IDX) = (
+    show  = () -> (@ccall plotlib.plot3d_show(idx::UInt32)::Bool;  plot3d(idx)),
+    hide  = () -> (@ccall plotlib.plot3d_hide(idx::UInt32)::Bool;  plot3d(idx)),
+    clear = () -> (@ccall plotlib.plot3d_clear(idx::UInt32)::Bool; plot3d(idx)),
+    
+    set_name = (name::String) -> (@ccall plotlib.plot3d_set_name(idx::UInt32, name::Cstring)::Bool; plot3d(idx)),
+    
+    as_spheres         = (point_diameter) -> (@ccall plotlib.plot3d_as_spheres(idx::UInt32, point_diameter::Float32)::Bool; plot3d(idx)),
+    as_lines           = () -> (@ccall plotlib.plot3d_as_lines(idx::UInt32)::Bool;                                          plot3d(idx)),
+    as_triangles       = () -> (@ccall plotlib.plot3d_as_triangles(idx::UInt32)::Bool;                                      plot3d(idx)),
+    as_continuous_line = () -> (@ccall plotlib.plot3d_as_continuous_line(idx::UInt32)::Bool;                                plot3d(idx)),
+    
+    append_vertex = (x, y, z) -> (@ccall plotlib.plot3d_append_vertex(idx::UInt32, x::Float32, y::Float32, z::Float32)::Bool; plot3d(idx)),
+
+    append_vertex_with_color = (x, y, z, color::Color) -> begin
+        @ccall plotlib.plot3d_append_vertex_with_color(plot3d_idx::UInt32, x::Float32, y::Float32, z::Float32,
+                                                       color.r::UInt8, color.g::UInt8, color.b::UInt8, color.a::UInt8)::Bool
+        plot3d(idx)
+    end,
+
+    fill_vertices_x_y_z = (vertices_x::Vector{Float32}, vertices_y::Vector{Float32}, vertices_z::Vector{Float32}) -> begin
+        if length(vertices_x) != length(vertices_y) || length(vertices_x) != length(vertices_z)
+            println("PLOTLIB ERROR: The length of 'vertices_x', 'vertices_y' and 'vertices_z' must match.")
+            return false
+        end
+        @ccall plotlib.plot3d_fill_vertices_x_y_z(plot3d_idx::UInt32, vertices_x::Ptr{Float32}, vertices_y::Ptr{Float32}, vertices_z::Ptr{Float32},
+                                                  length(vertices_x)::UInt64)::Bool
+        plot3d(idx)
+    end,
+
+    rotate_quaternion = (i, j, k, real) -> begin
+        @ccall plotlib.plot3d_rotate_quaternion(plot3d_idx::UInt32, i::Float32, j::Float32, k::Float32, real::Float32)::Bool
+        plot3d(idx)
+    end,
+
+    set_orientation_quaternion = (i, j, k, real) -> begin
+        @ccall plotlib.plot3d_set_orientation_quaternion(plot3d_idx::UInt32, i::Float32, j::Float32, k::Float32, real::Float32)::Bool
+        plot3d(idx)
+    end,
+
+    move         = (x, y, z) -> (@ccall plotlib.plot3d_move(plot3d_idx::UInt32, x::Float32, y::Float32, z::Float32)::Bool; plot3d(idx)),
+    set_position = (x, y, z) -> (@ccall plotlib.plot3d_set_position(plot3d_idx::UInt32, x::Float32, y::Float32, z::Float32)::Bool; plot3d(idx)),
+)
+
+# Plotter3d
+
+plotter3d(idx = DEFAULT_IDX) = (
+    show  = () -> (@ccall plotlib.plotter3d_show(idx::UInt32)::Bool;  plotter3d(idx)),
+    clear = () -> (@ccall plotlib.plotter3d_clear(idx::UInt32)::Bool; plotter3d(idx)),
+    
+    add_plot3d    = (plot3d_idx) -> (@ccall plotlib.plotter3d_add_plot3d(idx::UInt32, plot3d_idx::UInt32)::Bool;    plotter3d(idx)),
+    remove_plot3d = (plot3d_idx) -> (@ccall plotlib.plotter3d_remove_plot3d(idx::UInt32, plot3d_idx::UInt32)::Bool; plotter3d(idx)),
+    
+    set_name = (name::String) -> (@ccall plotlib.plotter3d_set_name(idx::UInt32, name::String)::Bool; plotter3d(idx)),
+    
+    perspective_projection = (FOV) -> (@ccall plotlib.plotter3d_perspective_projection(idx::UInt32, FOV::Float32)::Bool; plotter3d(idx)),
+    camera_free            = () -> (@ccall plotlib.plotter3d_camera_free(idx::UInt32)::Bool;                             plotter3d(idx)),
+    
+    track_point               = (x, y, z) -> (@ccall plotlib.plotter3d_track_point(idx::UInt32, x::Float32, y::Float32, z::Float32)::Bool;    plotter3d(idx)),
+    track_point_relative_to_plot3d = (plot3d_idx, x, y, z) -> begin
+        @ccall plotlib.plotter3d_track_point_relative_to_plot3d(idx::UInt32, plot3d_idx::UInt32, x::Float32, y::Float32, z::Float32)::Bool
+        plotter3d(idx)
+    end,
+    track_plot3d_midpoint      = (plot3d_idx) -> (@ccall plotlib.plotter3d_track_plot3d_midpoint(idx::UInt32, plot3d_idx::UInt32)::Bool;      plotter3d(idx)),
+    track_plot3d_latest_vertex = (plot3d_idx) -> (@ccall plotlib.plotter3d_track_plot3d_latest_vertex(idx::UInt32, plot3d_idx::UInt32)::Bool; plotter3d(idx)),
+)
+
+# Panel
+
+panel(idx = DEFAULT_IDX) = (
+    show  = () -> (@ccall plotlib.plotlibpanel_show(idx::UInt32)::Bool;  panel(idx)),
+    clear = () -> (@ccall plotlib.plotlibpanel_clear(idx::UInt32)::Bool; panel(idx)),
+
+    tile = (tile_idx) -> (
+        make_leftright = () -> (@ccall plotlib.plotlibpanel_add_leftright_tile(idx::UInt32, tile_idx::UInt32)::Bool; panel(idx)),
+        make_topbottom = () -> (@ccall plotlib.plotlibpanel_add_topbottom_tile(idx::UInt32, tile_idx::UInt32)::Bool; panel(idx)),
+        
+        insert_plotter   = (plotter_idx) -> (@ccall plotlib.plotlibpanel_add_plotter(idx::UInt32, tile_idx::UInt32, plotter_idx::UInt32)::Bool;       panel(idx)),
+        insert_plotter3d = (plotter3d_idx) -> (@ccall plotlib.plotlibpanel_add_plotter3d(idx::UInt32, tile_idx::UInt32, plotter3d_idx::UInt32)::Bool; panel(idx))
+    ),
+    
+    remove_plotter   = (plotter_idx) -> (@ccall plotlib.plotlibpanel_remove_plotter(idx::UInt32, plotter_idx::UInt32)::Bool;       panel(idx)),
+    remove_plotter3d = (plotter3d_idx) -> (@ccall plotlib.plotlibpanel_remove_plotter3d(idx::UInt32, plotter3d_idx::UInt32)::Bool; panel(idx)),
+)
+
+# The default `show()` for the named tuples of functions returned by `plot(x)` etc. is really unhelpful
+# This just displays what `plot(x)` etc. stand for more abstractly (ie. the plot at index x).
+
+Base.show(io::IO, plot_x::typeof(plot()))           = print(io, "Plot [$(plot_x.plot_idx)]")
+Base.show(io::IO, plotter_x::typeof(plotter()))     = print(io, "Plotter [$(plotter_x.plotter_idx)]")
+Base.show(io::IO, plot3d_x::typeof(plot3d()))       = print(io, "Plot3d [$(plot3d_x.plot3d_idx)]")
+Base.show(io::IO, plotter3d_x::typeof(plotter3d())) = print(io, "Plotter3d [$(plotter3d_x.plotter3d_idx)]")
+Base.show(io::IO, panel_x::typeof(panel()))         = print(io, "Panel [$(panel_x.panel_idx)]")
+
+# Gets called when this module (Plotlib) is loaded
+function __init__()
+    
+    if Sys.islinux()
+        global plotlib  = "$(@__DIR__)/libplotlib.so"
+        plotlib_cpp     = "$(@__DIR__)/plotlib.cpp"
+        
+        requires_rebuild = true
+        if !isfile(plotlib)
+            @info("'libplotlib.so' not found in the folder which contains 'plotlib.jl', building from source with GCC (g++)...")
+        elseif stat(plotlib).mtime < stat(plotlib_cpp).mtime
+            @info("'libplotlib.so' older than 'plotlib.cpp' rebuilding from source with GCC (g++)...")
+        else
+            requires_rebuild = false
+        end
+        
+        if requires_rebuild
+            try
+                # Change to directory of this file, build the shared library and go back to the original working directory
+                working_dir = pwd()
+                cd(@__DIR__)
+                run(`gcc bin_to_strliteral.c -o bin_to_strliteral`)
+                run(`./bin_to_strliteral --extern --ident gui_font_binary_ttf ClearSans-Regular.ttf gui_font_binary_ttf.cpp`)
+                run(`g++ -std=c++20 -fPIC -fvisibility=hidden -ggdb -c -Wall -Wextra -pedantic -Wno-infinite-recursion -Wno-missing-field-initializers -shared plotlib.cpp gui_font_binary_ttf.cpp`)
+                run(`g++ -shared -o libplotlib.so plotlib.o gui_font_binary_ttf.o -L"./raylib/" -lraylib_5_5_linux -lGL -lm -lpthread -ldl -lrt -lX11`)
+                run(`rm bin_to_strliteral gui_font_binary_ttf.cpp gui_font_binary_ttf.o plotlib.o`)
+                cd(working_dir)
+            catch e
+                @error("Failed to build `libplotlib.so`. Please include 'plotlib.jl' again, after resolving the error(s).")
+            else
+                global plotlib = "$(@__DIR__)/libplotlib.so"
+                @assert(isfile(plotlib))
+                @info("Successfully built 'libplotlib.so'!")
+            end
+        end
+        
+    elseif Sys.iswindows()
+        global plotlib = "$(@__DIR__)\\libplotlib.dll"
+        
+        if !isfile(plotlib)
+            error("'libplotlib.dll' not found in the folder which contains 'plotlib.jl', and also cannot be compiled
+                  automatically because this needs to happen inside the 64-bit Visual Studio devloper shell.
+                  You need to manually execute 'build_shared_lib.bat' there. Consult the 'README.md' for more details.");
+        end
+    else
+        @error("Your operating system with kernel '$(Sys.KERNEL)' is not supported by Plotlib! Only Linux and Microsoft Windows are supported.")
     end
-    @ccall plotlib.plot_append_points_x_y(plot_idx::UInt32, points_x::Ptr{Float64}, points_y::Ptr{Float64}, length(points_y)::UInt64)::Bool
-end
-
-function append_points_xy(plot_idx, points_xy::Vector{Float64})::Bool
-    @ccall plotlib.plot_append_points_xy(plot_idx::UInt32, points_xy::Ptr{Float64}, length(points_xy)::UInt64)::Bool
-end
-
-function show_group(plotgroup_idx)::Bool
-    @ccall plotlib.plotgroup_show(plotgroup_idx::UInt32)::Bool
-end
-
-"Adds the plot to the group."
-function group_append(plotgroup_idx, plot_idx)::Bool
-    @ccall plotlib.plotgroup_append(plotgroup_idx::UInt32, plot_idx::UInt32)::Bool
-end
-
-"Removes the plot from the group."
-function group_remove(plotgroup_idx, plot_idx)::Bool
-    @ccall plotlib.plotgroup_remove(plotgroup_idx::UInt32, plot_idx::UInt32)::Bool
-end
-
-"Removes all plots from the group."
-function clear_group(plotgroup_idx)::Bool
-    @ccall plotlib.plotgroup_clear(plotgroup_idx::UInt32)::Bool
-end
-
-function set_group_name(plotgroup_idx, name::String)::Bool
-    @ccall plotlib.plotgroup_set_name(plotgroup_idx::UInt32, name::Cstring)::Bool
 end
 
 end # module Plotlib
