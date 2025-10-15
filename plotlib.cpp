@@ -2038,12 +2038,12 @@ PLOTAPI bool plot_show(Plot_Idx plot_idx)
 {
     Scoped_GPS_Mutext_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
-    gps.panels[0].shared.new_tiles.push_back(Panel_Tile{.type=Panel_Tile::PLOTTER, .automatic_tile_insertion=true, .plotter_idx=0 });
-    gps.panels[0].shared.no_changes = false;
-    gps.gui.shared.visible_panel = 0;
+    gps.panels[DEFAULT_IDX].shared.new_tiles.push_back(Panel_Tile{.type=Panel_Tile::PLOTTER, .automatic_tile_insertion=true, .plotter_idx=DEFAULT_IDX });
+    gps.panels[DEFAULT_IDX].shared.no_changes = false;
+    gps.gui.shared.visible_panel = DEFAULT_IDX;
     
-    gps.plotters[0].shared.new_plots.push_back(plot_idx);
-    gps.plotters[0].shared.no_changes = false;
+    gps.plotters[DEFAULT_IDX].shared.new_plots.push_back(plot_idx);
+    gps.plotters[DEFAULT_IDX].shared.no_changes = false;
     
     gps.gui.shared.window_visible = true;
     start_gui_thread_if_not_started();
@@ -2843,6 +2843,7 @@ PLOTAPI bool plotlibpanel_show(uint32_t panel_idx)
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
     gps.gui.shared.visible_panel = panel_idx;
+    start_gui_thread_if_not_started();
     return true;
 }
 

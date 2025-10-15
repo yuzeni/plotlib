@@ -148,6 +148,8 @@ plot(idx = DEFAULT_IDX) = (
 # Plotter
 
 plotter(idx = DEFAULT_IDX) = (
+    plotter_idx = idx,
+    
     show  = () -> (@ccall plotlib.plotter_show(idx::UInt32)::Bool;  plotter(idx)),
     clear = () -> (@ccall plotlib.plotter_clear(idx::UInt32)::Bool; plotter(idx)),
     
@@ -166,6 +168,8 @@ plotter(idx = DEFAULT_IDX) = (
 # Plot3d
 
 plot3d(idx = DEFAULT_IDX) = (
+    plot3d_idx = idx,
+    
     show  = () -> (@ccall plotlib.plot3d_show(idx::UInt32)::Bool;  plot3d(idx)),
     hide  = () -> (@ccall plotlib.plot3d_hide(idx::UInt32)::Bool;  plot3d(idx)),
     clear = () -> (@ccall plotlib.plot3d_clear(idx::UInt32)::Bool; plot3d(idx)),
@@ -212,6 +216,8 @@ plot3d(idx = DEFAULT_IDX) = (
 # Plotter3d
 
 plotter3d(idx = DEFAULT_IDX) = (
+    plotter3d_idx = idx,
+    
     show  = () -> (@ccall plotlib.plotter3d_show(idx::UInt32)::Bool;  plotter3d(idx)),
     clear = () -> (@ccall plotlib.plotter3d_clear(idx::UInt32)::Bool; plotter3d(idx)),
     
@@ -235,10 +241,14 @@ plotter3d(idx = DEFAULT_IDX) = (
 # Panel
 
 panel(idx = DEFAULT_IDX) = (
+    panel_idx = idx,
+    
     show  = () -> (@ccall plotlib.plotlibpanel_show(idx::UInt32)::Bool;  panel(idx)),
     clear = () -> (@ccall plotlib.plotlibpanel_clear(idx::UInt32)::Bool; panel(idx)),
 
-    tile = (tile_idx) -> (
+    tile = (tile_idx = DEFAULT_IDX) -> (
+        tile_idx = tile_idx,
+        
         make_leftright = () -> (@ccall plotlib.plotlibpanel_add_leftright_tile(idx::UInt32, tile_idx::UInt32)::Bool; panel(idx)),
         make_topbottom = () -> (@ccall plotlib.plotlibpanel_add_topbottom_tile(idx::UInt32, tile_idx::UInt32)::Bool; panel(idx)),
         
@@ -258,6 +268,7 @@ Base.show(io::IO, plotter_x::typeof(plotter()))     = print(io, "Plotter [$(plot
 Base.show(io::IO, plot3d_x::typeof(plot3d()))       = print(io, "Plot3d [$(plot3d_x.plot3d_idx)]")
 Base.show(io::IO, plotter3d_x::typeof(plotter3d())) = print(io, "Plotter3d [$(plotter3d_x.plotter3d_idx)]")
 Base.show(io::IO, panel_x::typeof(panel()))         = print(io, "Panel [$(panel_x.panel_idx)]")
+Base.show(io::IO, tile_x::typeof(panel().tile()))   = print(io, "Panel-Tile [$(tile_x.tile_idx)]")
 
 # Gets called when this module (Plotlib) is loaded
 function __init__()

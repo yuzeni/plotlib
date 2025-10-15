@@ -9,6 +9,8 @@
 #define PLOTLIB_MAX_PLOTTER3D_IDX (256 - 1)
 #define PLOTLIB_MAX_PANEL_IDX (256 - 1)
 
+#define DEFAULT_IDX (0)
+
 #define LIBTYPE_SHARED 1
 
 #ifdef LIBTYPE_SHARED
