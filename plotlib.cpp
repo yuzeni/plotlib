@@ -16,6 +16,7 @@
 namespace rl {
 #include "raylib/raylib.h"
 #include "raylib/raymath.h"
+#include "raylib/rlgl.h"
 }
 
 // User-changeable constants
@@ -582,9 +583,9 @@ struct Plotlib_State {
 static Plotlib_State gps; // Global Plotlib State
 static std::mutex gps_shared_mutex;
 
-struct Scoped_GPS_Mutext_Lock {
-    Scoped_GPS_Mutext_Lock() { gps_shared_mutex.lock(); }
-    ~Scoped_GPS_Mutext_Lock() { gps_shared_mutex.unlock(); }
+struct Scoped_GPS_Mutex_Lock {
+    Scoped_GPS_Mutex_Lock() { gps_shared_mutex.lock(); }
+    ~Scoped_GPS_Mutex_Lock() { gps_shared_mutex.unlock(); }
 };
 
 ////////////////////////////////////////////
@@ -637,7 +638,7 @@ void Panel::initialize(Panel_Idx panel_idx)
 
 static void initialize_plotlib_state()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     
     for (Plot_Idx plot_idx = 0; plot_idx <= PLOTLIB_MAX_PLOT_IDX; ++plot_idx) {
         gps.plots[plot_idx].initialize(plot_idx);
@@ -658,6 +659,9 @@ static void initialize_plotlib_state()
     for (Panel_Idx panel_idx = 0; panel_idx <= PLOTLIB_MAX_PANEL_IDX; ++panel_idx) {
         gps.panels[panel_idx].initialize(panel_idx);
     }
+
+    // raylib-setup
+    rl::rlSetClipPlanes(0.01, 10000.0);
 }
 
 ////////////////////////////////////////////
@@ -975,7 +979,7 @@ void Panel::synchronize_with_shared_state(Panel_Idx panel_idx)
 
 static void synchronize_plotlib_state()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     
     gps.gui.synchronize_with_shared_state();
     gps.gui.shared.reset_after_sync();
@@ -1217,7 +1221,7 @@ static Range_XY bounding_box_of_plots_bounding_boxes(std::vector<Plot_Idx>& plot
 {
     Range_XY bbox = { MAX_DOUBLE, -MAX_DOUBLE, MAX_DOUBLE, -MAX_DOUBLE };
     for (uint64_t i = 0; i < plots.size(); ++i) {
-        Plot plot = gps.plots[plots[i]];
+        Plot& plot = gps.plots[plots[i]];
         bbox.x_begin = plot.bbox.x_begin < bbox.x_begin ? plot.bbox.x_begin : bbox.x_begin;
         bbox.x_end = plot.bbox.x_end > bbox.x_end ? plot.bbox.x_end : bbox.x_end;
         bbox.y_begin = plot.bbox.y_begin < bbox.y_begin ? plot.bbox.y_begin : bbox.y_begin;
@@ -1285,8 +1289,11 @@ void Plotter::draw(rl::Rectangle bounds, bool tile_in_focus)
             midpoint.x += latest_points[i].x;
             midpoint.y += latest_points[i].y;
         }
-        midpoint.x /= latest_points.size();
-        midpoint.y /= latest_points.size();
+        
+        if (latest_points.size() != 0) {
+            midpoint.x /= latest_points.size();
+            midpoint.y /= latest_points.size();
+        }
 
         plot_range = { midpoint.x - vis_mode.x_range / 2.0,
                        midpoint.x + vis_mode.x_range / 2.0,
@@ -1554,7 +1561,10 @@ void Plotter3d::draw(rl::Rectangle bounds, bool tile_in_focus)
     case Plotter3d_Visualization_Mode::TRACK_PLOT3D_RELATIVE_POINT:
     {
         Plot3d& plot3d = gps.plots3d[vis_mode.plot3d_idx];
+        rl::Vector3 old_target = rl_camera.target;
         rl_camera.target = from_homo(plot3d.transform * point_to_homo(vis_mode.relative_point));
+        rl::Vector3 target_delta = rl_camera.target - old_target;
+        rl_camera.position += target_delta;
     } break;
     case Plotter3d_Visualization_Mode::TRACK_PLOT3D_MIDPOINT:
     {
@@ -1997,32 +2007,32 @@ static void start_gui_thread_if_not_started()
 
 PLOTAPI void plotlib_show()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     gps.gui.shared.window_visible = true;
     start_gui_thread_if_not_started();
 }
 
 PLOTAPI void plotlib_hide()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     gps.gui.shared.terminate = true;
 }
 
 PLOTAPI void plotlib_dark_theme()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     gps.gui.shared.colors = dark_theme_colors;
 }
 
 PLOTAPI void plotlib_light_theme()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     gps.gui.shared.colors = light_theme_colors;
 }
 
 PLOTAPI void plotlib_clear_all_plots()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     for (Plot_Idx plot_idx = 0; plot_idx <= PLOTLIB_MAX_PLOT_IDX; ++plot_idx) {
         gps.plots[plot_idx].shared.clear_plot();
     }
@@ -2030,13 +2040,13 @@ PLOTAPI void plotlib_clear_all_plots()
 
 PLOTAPI void plotlib_interactive()
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     gps.gui.shared.interactive_on_touch = true;
 }
 
 PLOTAPI bool plot_show(Plot_Idx plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.panels[DEFAULT_IDX].shared.new_tiles.push_back(Panel_Tile{.type=Panel_Tile::PLOTTER, .automatic_tile_insertion=true, .plotter_idx=DEFAULT_IDX });
     gps.panels[DEFAULT_IDX].shared.no_changes = false;
@@ -2052,7 +2062,7 @@ PLOTAPI bool plot_show(Plot_Idx plot_idx)
 
 PLOTAPI bool plot_hide(Plot_Idx plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plotters[0].shared.remove_plots.push_back(plot_idx);
     gps.plotters[0].shared.no_changes = false;
@@ -2061,7 +2071,7 @@ PLOTAPI bool plot_hide(Plot_Idx plot_idx)
 
 PLOTAPI bool plot_clear(uint32_t plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plots[plot_idx].shared.clear_plot();
     return true;
@@ -2069,7 +2079,7 @@ PLOTAPI bool plot_clear(uint32_t plot_idx)
 
 PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, uint8_t a) 
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plots[plot_idx].shared.custom_color = Color{r, g, b, a};
     gps.plots[plot_idx].shared.has_custom_color = true;
@@ -2079,7 +2089,7 @@ PLOTAPI bool plot_set_color(uint32_t plot_idx, uint8_t r, uint8_t g, uint8_t b, 
 
 PLOTAPI bool plot_set_name(uint32_t plot_idx, const char* name)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     plot.shared.new_name = new char[strlen(name) + 1];
@@ -2090,7 +2100,7 @@ PLOTAPI bool plot_set_name(uint32_t plot_idx, const char* name)
 
 PLOTAPI bool plot_as_lines(uint32_t plot_idx, double line_width)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plots[plot_idx].shared.show_lines = true;
     gps.plots[plot_idx].shared.show_points = false;
@@ -2101,7 +2111,7 @@ PLOTAPI bool plot_as_lines(uint32_t plot_idx, double line_width)
 
 PLOTAPI bool plot_as_scatter(uint32_t plot_idx, double diameter)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plots[plot_idx].shared.show_points = true;
     gps.plots[plot_idx].shared.show_lines = false;
@@ -2112,7 +2122,7 @@ PLOTAPI bool plot_as_scatter(uint32_t plot_idx, double diameter)
 
 PLOTAPI bool plot_as_scatterlines(uint32_t plot_idx, double line_width, double diameter)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     gps.plots[plot_idx].shared.show_points = true;
     gps.plots[plot_idx].shared.show_lines = true;
@@ -2124,7 +2134,7 @@ PLOTAPI bool plot_as_scatterlines(uint32_t plot_idx, double line_width, double d
 
 PLOTAPI bool plot_fill_numbers(uint32_t plot_idx, void* numbers, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
 
     Plot& plot = gps.plots[plot_idx];
@@ -2149,7 +2159,7 @@ PLOTAPI bool plot_fill_numbers(uint32_t plot_idx, void* numbers, const Number_Ty
 
 PLOTAPI bool plot_fill_points_x_y(uint32_t plot_idx, void* points_x, void* points_y, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     plot.shared.clear_plot();
@@ -2185,7 +2195,7 @@ PLOTAPI bool plot_fill_points_x_y(uint32_t plot_idx, void* points_x, void* point
 
 PLOTAPI bool plot_fill_points_xy(uint32_t plot_idx, void* points_xy, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     if (count % 2 != 0) {
         printf(ERROR "The count provided is not divisible by 2 but 'plot_fill_points_xy' expects an array of Points.\n");
@@ -2225,7 +2235,7 @@ PLOTAPI bool plot_fill_points_xy(uint32_t plot_idx, void* points_xy, const Numbe
 
 PLOTAPI bool plot_append_number(uint32_t plot_idx, double number)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     if (plot.shared.contains_points) {
@@ -2241,7 +2251,7 @@ PLOTAPI bool plot_append_number(uint32_t plot_idx, double number)
 
 PLOTAPI bool plot_append_numbers(uint32_t plot_idx, void* numbers, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     if (plot.shared.contains_points) {
@@ -2268,7 +2278,7 @@ PLOTAPI bool plot_append_numbers(uint32_t plot_idx, void* numbers, const Number_
 
 PLOTAPI bool plot_append_point(uint32_t plot_idx, double point_x, double point_y)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     if (plot.shared.contains_numbers) {
@@ -2285,7 +2295,7 @@ PLOTAPI bool plot_append_point(uint32_t plot_idx, double point_x, double point_y
 
 PLOTAPI bool plot_append_points_x_y(uint32_t plot_idx, void* points_x, void* points_y, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     Plot& plot = gps.plots[plot_idx];
     if (plot.shared.contains_numbers) {
@@ -2326,7 +2336,7 @@ PLOTAPI bool plot_append_points_x_y(uint32_t plot_idx, void* points_x, void* poi
 
 PLOTAPI bool plot_append_points_xy(uint32_t plot_idx, void* points_xy, const Number_Types num_type, uint64_t count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot_idx(plot_idx)) return false;
     if (count % 2 != 0) {
         printf(ERROR "The count provided is not divisible by 2 but 'plot_append_points_xy' expects an array of Points.\n");
@@ -2371,13 +2381,13 @@ PLOTAPI bool plot_append_points_xy(uint32_t plot_idx, void* points_xy, const Num
 
 PLOTAPI uint64_t plot_get_length(uint32_t plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     return gps.plots[plot_idx].shared.plot_length;
 }
 
 PLOTAPI bool plotter_show(uint32_t plotter_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
@@ -2392,7 +2402,7 @@ PLOTAPI bool plotter_show(uint32_t plotter_idx)
 
 PLOTAPI bool plotter_add_plot(uint32_t plotter_idx, uint32_t plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if ( !valid_plotter_idx(plotter_idx) || !valid_plot_idx(plot_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2404,7 +2414,7 @@ PLOTAPI bool plotter_add_plot(uint32_t plotter_idx, uint32_t plot_idx)
 
 PLOTAPI bool plotter_remove_plot(uint32_t plotter_idx, uint32_t plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx) || !valid_plot_idx(plot_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2416,7 +2426,7 @@ PLOTAPI bool plotter_remove_plot(uint32_t plotter_idx, uint32_t plot_idx)
 
 PLOTAPI bool plotter_clear(uint32_t plotter_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2427,7 +2437,7 @@ PLOTAPI bool plotter_clear(uint32_t plotter_idx)
 
 PLOTAPI bool plotter_set_name(uint32_t plotter_idx, const char* name)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2440,7 +2450,7 @@ PLOTAPI bool plotter_set_name(uint32_t plotter_idx, const char* name)
 
 PLOTAPI bool plotter_track_latest(uint32_t plotter_idx, uint64_t points_count)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2451,7 +2461,7 @@ PLOTAPI bool plotter_track_latest(uint32_t plotter_idx, uint64_t points_count)
 
 PLOTAPI bool plotter_track_latest_range_x(uint32_t plotter_idx, double x_range)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2462,7 +2472,7 @@ PLOTAPI bool plotter_track_latest_range_x(uint32_t plotter_idx, double x_range)
 
 PLOTAPI bool plotter_track_latest_range_xy(uint32_t plotter_idx, double x_range, double y_range)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2474,7 +2484,7 @@ PLOTAPI bool plotter_track_latest_range_xy(uint32_t plotter_idx, double x_range,
 
 PLOTAPI bool plotter_track_all(uint32_t plotter_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2485,7 +2495,7 @@ PLOTAPI bool plotter_track_all(uint32_t plotter_idx)
 
 PLOTAPI bool plotter_track_specific_plot(uint32_t plotter_idx, uint32_t plot_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter_idx(plotter_idx) || !valid_plot_idx(plot_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2507,7 +2517,7 @@ PLOTAPI bool plotter_track_specific_plot(uint32_t plotter_idx, uint32_t plot_idx
 
 PLOTAPI bool plot3d_show(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.panels[0].shared.new_tiles.push_back(Panel_Tile{.type=Panel_Tile::PLOTTER3D, .automatic_tile_insertion=true, .plotter3d_idx=0 });
     gps.panels[0].shared.no_changes = false;
@@ -2523,7 +2533,7 @@ PLOTAPI bool plot3d_show(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_hide(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plotters3d[0].shared.remove_plots3d.push_back(plot3d_idx);
     gps.plotters3d[0].shared.no_changes = false;
@@ -2532,7 +2542,7 @@ PLOTAPI bool plot3d_hide(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_clear(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plotters3d[0].shared.clear_plotter3d();
     gps.plotters3d[0].shared.no_changes = false;
@@ -2541,7 +2551,7 @@ PLOTAPI bool plot3d_clear(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_set_name(uint32_t plot3d_idx, const char* name)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     Plot3d& plot3d = gps.plots3d[plot3d_idx];
     plot3d.shared.new_name = new char[strlen(name) + 1];
@@ -2552,7 +2562,7 @@ PLOTAPI bool plot3d_set_name(uint32_t plot3d_idx, const char* name)
 
 PLOTAPI bool plot3d_as_spheres(uint32_t plot3d_idx, float sphere_diameter)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.type = Plot3d::SPHERES;
     gps.plots3d[plot3d_idx].shared.sphere_diameter = sphere_diameter;
@@ -2562,7 +2572,7 @@ PLOTAPI bool plot3d_as_spheres(uint32_t plot3d_idx, float sphere_diameter)
 
 PLOTAPI bool plot3d_as_lines(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.type = Plot3d::LINES;
     gps.plots3d[plot3d_idx].shared.no_changes = false;
@@ -2571,7 +2581,7 @@ PLOTAPI bool plot3d_as_lines(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_as_triangles(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.type = Plot3d::TRIANGLES;
     gps.plots3d[plot3d_idx].shared.no_changes = false;
@@ -2580,7 +2590,7 @@ PLOTAPI bool plot3d_as_triangles(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_as_continuous_line(uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.type = Plot3d::CONTINUOUS_LINE;
     gps.plots3d[plot3d_idx].shared.no_changes = false;
@@ -2589,7 +2599,7 @@ PLOTAPI bool plot3d_as_continuous_line(uint32_t plot3d_idx)
 
 PLOTAPI bool plot3d_append_vertex(uint32_t plot3d_idx, float x, float y, float z)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     static int color_idx = 0;
     color_idx = (color_idx + 1) % plot_color_table_size;
@@ -2601,7 +2611,7 @@ PLOTAPI bool plot3d_append_vertex(uint32_t plot3d_idx, float x, float y, float z
 
 PLOTAPI bool plot3d_append_vertex_with_color(uint32_t plot3d_idx, float x, float y, float z, uint8_t r, uint8_t g, uint8_t b, uint8_t a)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.new_vertices.push_back(Vertex{ .x=x, .y=y, .z=z, .color={r, g, b, a} });
     gps.plots3d[plot3d_idx].shared.no_changes = false;
@@ -2610,7 +2620,7 @@ PLOTAPI bool plot3d_append_vertex_with_color(uint32_t plot3d_idx, float x, float
 
 PLOTAPI bool plot3d_fill_vertices_x_y_z(uint32_t plot3d_idx, float* x, float* y, float* z, uint64_t length)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
 
     Plot3d& plot3d = gps.plots3d[plot3d_idx];
@@ -2627,7 +2637,7 @@ PLOTAPI bool plot3d_fill_vertices_x_y_z(uint32_t plot3d_idx, float* x, float* y,
 
 PLOTAPI bool plot3d_rotate_quaternion(uint32_t plot3d_idx, float i, float j, float k, float real)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     
     rl::Matrix& transform = gps.plots3d[plot3d_idx].shared.transform;
@@ -2649,7 +2659,7 @@ PLOTAPI bool plot3d_rotate_quaternion(uint32_t plot3d_idx, float i, float j, flo
 
 PLOTAPI bool plot3d_set_orientation_quaternion(uint32_t plot3d_idx, float i, float j, float k, float real)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
 
     rl::Matrix& transform = gps.plots3d[plot3d_idx].shared.transform;
@@ -2667,7 +2677,7 @@ PLOTAPI bool plot3d_set_orientation_quaternion(uint32_t plot3d_idx, float i, flo
 
 PLOTAPI bool plot3d_move(uint32_t plot3d_idx, float x, float y, float z)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.transform = rl::MatrixTranslate(x, y, z) * gps.plots3d[plot3d_idx].shared.transform;
     gps.plots3d[plot3d_idx].shared.no_changes = false;
@@ -2676,7 +2686,7 @@ PLOTAPI bool plot3d_move(uint32_t plot3d_idx, float x, float y, float z)
 
 PLOTAPI bool plot3d_set_position(uint32_t plot3d_idx, float x, float y, float z)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plot3d_idx(plot3d_idx)) return false;
     gps.plots3d[plot3d_idx].shared.transform.m12 = x;
     gps.plots3d[plot3d_idx].shared.transform.m13 = y;
@@ -2690,7 +2700,7 @@ PLOTAPI bool plot3d_set_position(uint32_t plot3d_idx, float x, float y, float z)
 
 PLOTAPI bool plotter3d_show(uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2705,7 +2715,7 @@ PLOTAPI bool plotter3d_show(uint32_t plotter3d_idx)
 
 PLOTAPI bool plotter3d_add_plot3d(uint32_t plotter3d_idx, uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx) || !valid_plot3d_idx(plot3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2717,7 +2727,7 @@ PLOTAPI bool plotter3d_add_plot3d(uint32_t plotter3d_idx, uint32_t plot3d_idx)
 
 PLOTAPI bool plotter3d_remove_plot3d(uint32_t plotter3d_idx, uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx) || !valid_plot3d_idx(plot3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2729,7 +2739,7 @@ PLOTAPI bool plotter3d_remove_plot3d(uint32_t plotter3d_idx, uint32_t plot3d_idx
 
 PLOTAPI bool plotter3d_clear(uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2740,7 +2750,7 @@ PLOTAPI bool plotter3d_clear(uint32_t plotter3d_idx)
 
 PLOTAPI bool plotter3d_set_name(uint32_t plotter3d_idx, const char* name)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
 
@@ -2753,7 +2763,7 @@ PLOTAPI bool plotter3d_set_name(uint32_t plotter3d_idx, const char* name)
 
 PLOTAPI bool plotter3d_orthogonal_projection(uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2764,7 +2774,7 @@ PLOTAPI bool plotter3d_orthogonal_projection(uint32_t plotter3d_idx)
 
 PLOTAPI bool plotter3d_perspective_projection(uint32_t plotter3d_idx, float FOV)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2781,7 +2791,7 @@ PLOTAPI bool plotter3d_perspective_projection(uint32_t plotter3d_idx, float FOV)
 
 PLOTAPI bool plotter3d_camera_free(uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2792,7 +2802,7 @@ PLOTAPI bool plotter3d_camera_free(uint32_t plotter3d_idx)
 
 PLOTAPI bool plotter3d_track_point(uint32_t plotter3d_idx, float x, float y, float z)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2803,7 +2813,7 @@ PLOTAPI bool plotter3d_track_point(uint32_t plotter3d_idx, float x, float y, flo
 
 PLOTAPI bool plotter3d_track_point_relative_to_plot3d(uint32_t plotter3d_idx, uint32_t plot3d_idx, float x, float y, float z)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2816,7 +2826,7 @@ PLOTAPI bool plotter3d_track_point_relative_to_plot3d(uint32_t plotter3d_idx, ui
 
 PLOTAPI bool plotter3d_track_plot3d_midpoint(uint32_t plotter3d_idx, uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2827,7 +2837,7 @@ PLOTAPI bool plotter3d_track_plot3d_midpoint(uint32_t plotter3d_idx, uint32_t pl
 
 PLOTAPI bool plotter3d_track_plot3d_latest_vertex(uint32_t plotter3d_idx, uint32_t plot3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PLOTTERS);
     
@@ -2838,7 +2848,7 @@ PLOTAPI bool plotter3d_track_plot3d_latest_vertex(uint32_t plotter3d_idx, uint32
 
 PLOTAPI bool plotlibpanel_show(uint32_t panel_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
@@ -2849,7 +2859,7 @@ PLOTAPI bool plotlibpanel_show(uint32_t panel_idx)
 
 PLOTAPI bool plotlibpanel_add_leftright_tile(uint32_t panel_idx, uint32_t tile_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
@@ -2860,7 +2870,7 @@ PLOTAPI bool plotlibpanel_add_leftright_tile(uint32_t panel_idx, uint32_t tile_i
 
 PLOTAPI bool plotlibpanel_add_topbottom_tile(uint32_t panel_idx, uint32_t tile_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
@@ -2871,7 +2881,7 @@ PLOTAPI bool plotlibpanel_add_topbottom_tile(uint32_t panel_idx, uint32_t tile_i
 
 PLOTAPI bool plotlibpanel_add_plotter(uint32_t panel_idx, uint32_t tile_idx, uint32_t plotter_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx) || !valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
@@ -2882,7 +2892,7 @@ PLOTAPI bool plotlibpanel_add_plotter(uint32_t panel_idx, uint32_t tile_idx, uin
 
 PLOTAPI bool plotlibpanel_add_plotter3d(uint32_t panel_idx, uint32_t tile_idx, uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx) || !valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     
@@ -2893,7 +2903,7 @@ PLOTAPI bool plotlibpanel_add_plotter3d(uint32_t panel_idx, uint32_t tile_idx, u
 
 PLOTAPI bool plotlibpanel_remove_plotter(uint32_t panel_idx, uint32_t plotter_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx) || !valid_plotter_idx(plotter_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
 
@@ -2904,7 +2914,7 @@ PLOTAPI bool plotlibpanel_remove_plotter(uint32_t panel_idx, uint32_t plotter_id
 
 PLOTAPI bool plotlibpanel_remove_plotter3d(uint32_t panel_idx, uint32_t plotter3d_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx) || !valid_plotter3d_idx(plotter3d_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
 
@@ -2915,7 +2925,7 @@ PLOTAPI bool plotlibpanel_remove_plotter3d(uint32_t panel_idx, uint32_t plotter3
 
 PLOTAPI bool plotlibpanel_clear(uint32_t panel_idx)
 {
-    Scoped_GPS_Mutext_Lock lock;
+    Scoped_GPS_Mutex_Lock lock;
     if (!valid_panel_idx(panel_idx)) return false;
     gps.gui.api_abstraction_level.set_level(API_Abstraction_Level::PANELS);
     

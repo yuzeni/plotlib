@@ -1,5 +1,4 @@
-// TODO: find the orginial author of this file
-// Many thanks to the *original author* !!!
+// This file was authored by mortie (https://github.com/mortie), many thanks to him!
 
 #include <stdlib.h>
 #include <stdio.h>
